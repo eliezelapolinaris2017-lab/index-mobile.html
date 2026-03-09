@@ -67,6 +67,22 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
+function parseTimestampToMillis(value) {
+  if (!value) return 0;
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const t = Date.parse(value);
+    return Number.isNaN(t) ? 0 : t;
+  }
+  if (value?.seconds) return value.seconds * 1000;
+  if (typeof value?.toMillis === "function") return value.toMillis();
+  return 0;
+}
+
+function showMessage(text) {
+  alert(text);
+}
+
 async function blobToDataUrl(blob) {
   return new Promise((res, rej) => {
     const r = new FileReader();
@@ -76,19 +92,54 @@ async function blobToDataUrl(blob) {
   });
 }
 
-async function urlToDataUrl(url) {
-  const resp = await fetch(url, { cache: "no-store" });
-  const blob = await resp.blob();
-  return blobToDataUrl(blob);
+async function loadImageFromObjectUrl(objectUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = objectUrl;
+  });
 }
 
-async function fileToDataUrl(file) {
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(r.result);
-    r.onerror = rej;
-    r.readAsDataURL(file);
-  });
+async function normalizeImageBlobToPngDataUrl(blob) {
+  const objectUrl = URL.createObjectURL(blob);
+
+  try {
+    const img = await loadImageFromObjectUrl(objectUrl);
+    const maxSide = 900;
+    let width = img.naturalWidth || img.width || 256;
+    let height = img.naturalHeight || img.height || 256;
+
+    if (width > maxSide || height > maxSide) {
+      const ratio = Math.min(maxSide / width, maxSide / height);
+      width = Math.max(1, Math.round(width * ratio));
+      height = Math.max(1, Math.round(height * ratio));
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, width, height);
+    ctx.drawImage(img, 0, 0, width, height);
+
+    return canvas.toDataURL("image/png");
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function fileToPdfReadyDataUrl(file) {
+  const blob = new Blob([file], { type: file.type || "image/png" });
+  return normalizeImageBlobToPngDataUrl(blob);
+}
+
+async function urlToPdfReadyDataUrl(url) {
+  const resp = await fetch(url, { cache: "no-store" });
+  if (!resp.ok) throw new Error("No se pudo descargar el logo.");
+  const blob = await resp.blob();
+  return normalizeImageBlobToPngDataUrl(blob);
 }
 
 function userBase(uid_) {
@@ -292,7 +343,8 @@ function refreshAuthUI() {
     "btnClearHist",
     "btnAddCustomer",
     "btnExportBackup",
-    "btnRestoreBackup"
+    "btnRestoreBackup",
+    "btnSaveBiz"
   ].forEach((id) => {
     if ($(id)) $(id).disabled = !isOn;
   });
@@ -316,8 +368,11 @@ async function loadAllFromFirestore() {
 
   if (state.cfg?.biz?.logoUrl && !state.cfg.biz.logoDataUrl) {
     try {
-      state.cfg.biz.logoDataUrl = await urlToDataUrl(state.cfg.biz.logoUrl);
-    } catch {}
+      state.cfg.biz.logoDataUrl = await urlToPdfReadyDataUrl(state.cfg.biz.logoUrl);
+    } catch (e) {
+      console.warn("No se pudo normalizar el logo desde Storage:", e);
+      state.cfg.biz.logoDataUrl = "";
+    }
   }
 
   indexCatalog();
@@ -341,10 +396,13 @@ async function loadAllFromFirestore() {
 
 async function saveSettingsToFirestore() {
   if (!state.user) return;
-  const sref = docSettings(state.user.uid);
 
+  const sref = docSettings(state.user.uid);
   const safeCfg = JSON.parse(JSON.stringify(normalizeCfg(state.cfg || defaultCfg())));
-  if (safeCfg?.biz) safeCfg.biz.logoDataUrl = "";
+
+  if (safeCfg?.biz) {
+    safeCfg.biz.logoDataUrl = "";
+  }
 
   await setDoc(sref, { ...safeCfg, updatedAt: serverTimestamp() }, { merge: true });
 }
@@ -404,7 +462,7 @@ async function restoreBackupFromFile(file) {
   }
 
   await loadAllFromFirestore();
-  alert("Backup restaurado ✅");
+  showMessage("Backup restaurado ✅");
 }
 
 function setView(view) {
@@ -800,7 +858,6 @@ function renderHistory() {
 
 function refreshKPIs() {
   const docs = state.docs || [];
-  const customers = state.customers || [];
 
   const pendingDocs = docs.filter((d) => d.status !== "PAGADA").length;
   const totalFacturado = docs
@@ -835,11 +892,7 @@ function renderLastTransactions() {
   wrap.innerHTML = "";
 
   const rows = [...(state.docs || [])]
-    .sort((a, b) => {
-      const left = String(b.updatedAt?.seconds || b.updatedAt || b.date || "");
-      const right = String(a.updatedAt?.seconds || a.updatedAt || a.date || "");
-      return left.localeCompare(right);
-    })
+    .sort((a, b) => parseTimestampToMillis(b.updatedAt) - parseTimestampToMillis(a.updatedAt))
     .slice(0, 5);
 
   if (!rows.length) {
@@ -984,6 +1037,7 @@ function openBiz() {
   if ($("bizEmail")) $("bizEmail").value = cfg.biz?.email || "";
   if ($("bizAddr")) $("bizAddr").value = cfg.biz?.addr || "";
   if ($("taxRate")) $("taxRate").value = String(cfg.taxRate ?? 11.5);
+  if ($("bizLogo")) $("bizLogo").value = "";
   if ($("settingsPanel")) $("settingsPanel").style.display = "flex";
 }
 
@@ -1004,15 +1058,23 @@ async function saveBiz() {
   cfg.taxRate = Number($("taxRate")?.value || 11.5);
 
   const file = $("bizLogo")?.files?.[0];
+
   if (file) {
     const path = `users/${state.user.uid}/logo_${Date.now()}_${file.name}`;
     const r = ref(storage, path);
+
     await uploadBytes(r, file);
     const url = await getDownloadURL(r);
+
     cfg.biz.logoUrl = url;
+    cfg.biz.logoDataUrl = await fileToPdfReadyDataUrl(file);
+  } else if (cfg.biz.logoUrl && !cfg.biz.logoDataUrl) {
     try {
-      cfg.biz.logoDataUrl = await fileToDataUrl(file);
-    } catch {}
+      cfg.biz.logoDataUrl = await urlToPdfReadyDataUrl(cfg.biz.logoUrl);
+    } catch (e) {
+      console.warn("No se pudo normalizar el logo guardado:", e);
+      cfg.biz.logoDataUrl = "";
+    }
   }
 
   state.cfg = normalizeCfg(cfg);
@@ -1020,7 +1082,7 @@ async function saveBiz() {
   indexCatalog();
   refreshKPIs();
   updateTotalsLive();
-  alert("Empresa guardada ✅");
+  showMessage("Empresa guardada ✅");
   closeBiz();
 }
 
@@ -1063,14 +1125,15 @@ function buildPdfDoc() {
 
   if (biz.logoDataUrl) {
     try {
-      const imgW = 54;
-      const imgH = 54;
+      const imgW = 58;
+      const imgH = 58;
       const imgX = W - margin - imgW;
-      const imgY = 24;
-      const isPng = String(biz.logoDataUrl).startsWith("data:image/png");
-      docp.addImage(biz.logoDataUrl, isPng ? "PNG" : "JPEG", imgX, imgY, imgW, imgH);
+      const imgY = 20;
+      docp.addImage(biz.logoDataUrl, "PNG", imgX, imgY, imgW, imgH);
       textTopY = imgY + imgH + 10;
-    } catch {}
+    } catch (e) {
+      console.warn("El logo no se pudo insertar en el PDF:", e);
+    }
   }
 
   let topY = textTopY;
@@ -1081,9 +1144,18 @@ function buildPdfDoc() {
   docp.setFont("helvetica", "normal");
   docp.setFontSize(10);
   topY += 14;
-  if (biz.addr) { docp.text(biz.addr, rightX, topY, { align: "right" }); topY += 12; }
-  if (biz.phone) { docp.text(`Tel: ${biz.phone}`, rightX, topY, { align: "right" }); topY += 12; }
-  if (biz.email) { docp.text(`Email: ${biz.email}`, rightX, topY, { align: "right" }); topY += 12; }
+  if (biz.addr) {
+    docp.text(biz.addr, rightX, topY, { align: "right" });
+    topY += 12;
+  }
+  if (biz.phone) {
+    docp.text(`Tel: ${biz.phone}`, rightX, topY, { align: "right" });
+    topY += 12;
+  }
+  if (biz.email) {
+    docp.text(`Email: ${biz.email}`, rightX, topY, { align: "right" });
+    topY += 12;
+  }
 
   const boxY = 132;
   docp.setFillColor(245, 245, 245);
@@ -1178,7 +1250,8 @@ function makePreview() {
     state.previewBlobUrl = URL.createObjectURL(blob);
     if ($("pdfFrame")) $("pdfFrame").src = state.previewBlobUrl;
     setView("preview");
-  } catch {
+  } catch (e) {
+    console.error(e);
     alert("No se pudo generar preview.");
   }
 }
@@ -1186,11 +1259,12 @@ function makePreview() {
 async function confirmPDF() {
   await saveCurrentToHistory({ forceNumber: true });
 
-  const cfg = state.cfg || defaultCfg();
-  if (cfg?.biz?.logoUrl && !cfg.biz.logoDataUrl) {
+  if (state.cfg?.biz?.logoUrl && !state.cfg?.biz?.logoDataUrl) {
     try {
-      cfg.biz.logoDataUrl = await urlToDataUrl(cfg.biz.logoUrl);
-    } catch {}
+      state.cfg.biz.logoDataUrl = await urlToPdfReadyDataUrl(state.cfg.biz.logoUrl);
+    } catch (e) {
+      console.warn("No se pudo refrescar el logo antes del PDF:", e);
+    }
   }
 
   try {
@@ -1198,7 +1272,8 @@ async function confirmPDF() {
     const file = `${state.current.type}_${state.current.number || "AUTO"}.pdf`;
     pdf.save(file);
     makePreview();
-  } catch {
+  } catch (e) {
+    console.error(e);
     alert("PDF falló.");
   }
 }
@@ -1273,7 +1348,7 @@ function bindEvents() {
   $("btnSaveDoc")?.addEventListener("click", async () => {
     try {
       await saveCurrentToHistory({ forceNumber: false });
-      alert("Guardado ✅");
+      showMessage("Guardado ✅");
     } catch (e) {
       console.error(e);
       alert("No se pudo guardar.");
