@@ -25,8 +25,6 @@ import {
   getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
-const HUB_URL = "https://eliezelapolinaris2017-lab.github.io/oasis-hub/";
-
 const firebaseConfig = {
   apiKey: "AIzaSyBm67RjL0QzMRLfo6zUYCI0bak1eGJAR-U",
   authDomain: "oasis-facturacion.firebaseapp.com",
@@ -87,15 +85,22 @@ async function fileToDataUrl(file) {
   });
 }
 
-function userBase(uid_) { return `users/${uid_}`; }
-function colDocs(uid_) { return collection(db, `${userBase(uid_)}/docs`); }
-function colCustomers(uid_) { return collection(db, `${userBase(uid_)}/customers`); }
-function docSettings(uid_) { return doc(db, `${userBase(uid_)}/settings/main`); }
+function userBase(uid_) {
+  return `users/${uid_}`;
+}
+function colDocs(uid_) {
+  return collection(db, `${userBase(uid_)}/docs`);
+}
+function colCustomers(uid_) {
+  return collection(db, `${userBase(uid_)}/customers`);
+}
+function docSettings(uid_) {
+  return doc(db, `${userBase(uid_)}/settings/main`);
+}
 
 let state = {
   user: null,
-  view: "invoicing",
-  sub: "confirm",
+  view: "home",
   activeDocId: null,
   current: null,
   previewBlobUrl: null,
@@ -223,14 +228,14 @@ function indexCatalog() {
   });
 }
 
-function newDoc() {
+function newDoc(type = "COT") {
   const cfg = state.cfg || defaultCfg();
   const today = toISODate(new Date());
   const valid = toISODate(new Date(Date.now() + 14 * 24 * 3600 * 1000));
 
   return {
     id: uid("doc"),
-    type: "COT",
+    type,
     number: "",
     date: today,
     status: "PENDIENTE",
@@ -247,7 +252,7 @@ function newDoc() {
 }
 
 function ensureAuthButtons() {
-  const wrap = $("mobileTopActions") || document.querySelector(".mobileTopActions");
+  const wrap = document.querySelector(".mobileTopActions");
   if (!wrap) return;
 
   if (!$("btnLogin")) {
@@ -270,8 +275,8 @@ function ensureAuthButtons() {
     wrap.prepend(b);
   }
 
-  $("btnLogin").addEventListener("click", login);
-  $("btnLogout").addEventListener("click", logout);
+  $("btnLogin").onclick = login;
+  $("btnLogout").onclick = logout;
 
   refreshAuthUI();
 }
@@ -290,7 +295,8 @@ function refreshAuthUI() {
     "btnClearHist",
     "btnAddCustomer",
     "btnExportBackup",
-    "btnRestoreBackup"
+    "btnRestoreBackup",
+    "btnSaveBiz"
   ].forEach((id) => {
     if ($(id)) $(id).disabled = !isOn;
   });
@@ -414,24 +420,27 @@ function setView(view) {
   document.querySelectorAll(".bottomLink").forEach((b) => b.classList.remove("is-active"));
   document.querySelectorAll(`.bottomLink[data-view="${view}"]`).forEach((b) => b.classList.add("is-active"));
 
-  if (view === "invoicing") renderInvoicing();
-  if (view === "customers") renderCustomers();
-  if (view === "history") renderHistory();
-  if (view === "reporting") renderReporting();
-  if (view === "configuration") renderConfiguration();
-}
-
-function setSub(sub) {
-  state.sub = sub;
-
-  document.querySelectorAll(".subtab").forEach((b) => b.classList.remove("is-active"));
-  document.querySelectorAll(`.subtab[data-sub="${sub}"]`).forEach((b) => b.classList.add("is-active"));
-
-  document.querySelectorAll(".panel").forEach((p) => p.classList.remove("is-active"));
-  if (sub === "confirm") $("panel-confirm")?.classList.add("is-active");
-  if (sub === "preview") $("panel-preview")?.classList.add("is-active");
-
-  if (sub === "preview") makePreview();
+  if (view === "home") {
+    refreshKPIs();
+  }
+  if (view === "invoicing") {
+    renderInvoicing();
+  }
+  if (view === "customers") {
+    renderCustomers();
+  }
+  if (view === "history") {
+    renderHistory();
+  }
+  if (view === "reporting") {
+    renderReporting();
+  }
+  if (view === "configuration") {
+    renderConfiguration();
+  }
+  if (view === "preview") {
+    makePreview();
+  }
 }
 
 function syncFormFromState() {
@@ -470,7 +479,6 @@ function readDocHeaderIntoState() {
 function buildServiceOptions(catId = "", selectedSvc = "") {
   const cat = state.catalogIndex.catById.get(catId);
   const list = cat?.services || [];
-
   let html = `<option value="">Servicio</option>`;
   list.forEach((svc) => {
     html += `<option value="${escapeHtml(svc.id)}" ${svc.id === selectedSvc ? "selected" : ""}>${escapeHtml(svc.name)}</option>`;
@@ -488,7 +496,7 @@ function buildCategoryOptions(selectedCat = "") {
 }
 
 function renderItemsMobile() {
-  const wrap = $("itemsMobile");
+  const wrap = $("items");
   if (!wrap) return;
 
   wrap.innerHTML = "";
@@ -673,7 +681,6 @@ async function saveCurrentToHistory({ forceNumber = false } = {}) {
 
   await setDoc(refDoc, payload, { merge: true });
   await loadAllFromFirestore();
-
   state.activeDocId = state.current.id;
 }
 
@@ -696,7 +703,6 @@ async function loadDocFromHistory(id) {
   updateTotalsLive();
   renderItemsMobile();
   setView("invoicing");
-  setSub("confirm");
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -740,7 +746,7 @@ function duplicateDoc() {
 }
 
 function renderHistory() {
-  const body = $("historyCards");
+  const body = $("histBody");
   if (!body) return;
 
   const q = (($("histSearch")?.value || "").trim().toLowerCase());
@@ -785,14 +791,14 @@ function renderHistory() {
           <div class="metaValue">${fmtMoney(d.totals?.grand || 0)}</div>
         </div>
         <div class="metaBlock">
-          <div class="metaLabel">Cliente</div>
+          <div class="metaLabel">Contacto</div>
           <div class="metaValue">${escapeHtml(d.client?.contact || "—")}</div>
         </div>
       </div>
 
       <div class="cardActions">
-        <button class="btn smallBtn hist-open">Abrir</button>
-        <button class="btn smallBtn primary hist-pdf">PDF</button>
+        <button class="btn smallBtn hist-open" type="button">Abrir</button>
+        <button class="btn smallBtn primary hist-pdf" type="button">PDF</button>
       </div>
     `;
 
@@ -834,7 +840,7 @@ function renderReporting() {
 }
 
 function renderCustomers() {
-  const wrap = $("customerCards");
+  const wrap = $("customersBody");
   if (!wrap) return;
 
   if ($("kpiCustomers")) $("kpiCustomers").textContent = String((state.customers || []).length);
@@ -879,8 +885,8 @@ function renderCustomers() {
       </div>
 
       <div class="cardActions">
-        <button class="btn smallBtn use-customer">Usar</button>
-        <button class="btn smallBtn danger del-customer">Borrar</button>
+        <button class="btn smallBtn use-customer" type="button">Usar</button>
+        <button class="btn smallBtn danger del-customer" type="button">Borrar</button>
       </div>
     `;
 
@@ -890,7 +896,6 @@ function renderCustomers() {
       state.current.client.addr = c.addr || "";
       syncFormFromState();
       setView("invoicing");
-      setSub("confirm");
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
 
@@ -978,9 +983,7 @@ async function saveBiz() {
   closeBiz();
 }
 
-function renderConfiguration() {
-  // intencionalmente liviano
-}
+function renderConfiguration() {}
 
 function renderInvoicing() {
   if (!state.current) state.current = newDoc();
@@ -1136,6 +1139,7 @@ function makePreview() {
     if (state.previewBlobUrl) URL.revokeObjectURL(state.previewBlobUrl);
     state.previewBlobUrl = URL.createObjectURL(blob);
     if ($("pdfFrame")) $("pdfFrame").src = state.previewBlobUrl;
+    setView("preview");
   } catch {
     alert("No se pudo generar preview.");
   }
@@ -1154,7 +1158,6 @@ async function confirmPDF() {
     const file = `${state.current.type}_${state.current.number || "AUTO"}.pdf`;
     pdf.save(file);
     makePreview();
-    setSub("preview");
   } catch {
     alert("PDF falló.");
   }
@@ -1165,33 +1168,18 @@ function bindEvents() {
     b.addEventListener("click", () => setView(b.dataset.view));
   });
 
-  document.querySelectorAll(".subtab").forEach((b) => {
-    b.addEventListener("click", () => setSub(b.dataset.sub));
-  });
-
-  $("btnNew")?.addEventListener("click", () => {
+  $("btnQuickQuote")?.addEventListener("click", () => {
     state.activeDocId = null;
-    state.current = newDoc();
+    state.current = newDoc("COT");
     renderInvoicing();
     setView("invoicing");
-    setSub("confirm");
   });
 
-  $("btnQuickNew")?.addEventListener("click", () => {
+  $("btnQuickInvoice")?.addEventListener("click", () => {
     state.activeDocId = null;
-    state.current = newDoc();
+    state.current = newDoc("FAC");
     renderInvoicing();
     setView("invoicing");
-    setSub("confirm");
-  });
-
-  $("btnQuickPreview")?.addEventListener("click", () => {
-    setView("invoicing");
-    setSub("preview");
-  });
-
-  $("btnQuickHistory")?.addEventListener("click", () => {
-    setView("history");
   });
 
   $("btnSettings")?.addEventListener("click", openBiz);
@@ -1294,8 +1282,6 @@ function bindEvents() {
 
     e.target.value = "";
   });
-
-  $("hubBackBtn")?.setAttribute("href", HUB_URL);
 }
 
 function boot() {
@@ -1304,10 +1290,9 @@ function boot() {
 
   state.cfg = normalizeCfg(defaultCfg());
   indexCatalog();
-  state.current = newDoc();
+  state.current = newDoc("COT");
 
-  setView("invoicing");
-  setSub("confirm");
+  setView("home");
   renderItemsMobile();
   updateTotalsLive();
 
