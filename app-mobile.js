@@ -46,7 +46,13 @@ const fmtMoney = (n) => {
   return x.toLocaleString("en-US", { style: "currency", currency: "USD" });
 };
 
-const toISODate = (d) => new Date(d).toISOString().slice(0, 10);
+const toISODate = (d) => {
+  const x = new Date(d);
+  const y = x.getFullYear();
+  const m = String(x.getMonth() + 1).padStart(2, "0");
+  const day = String(x.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
 
 function uid(prefix = "id") {
   return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -183,11 +189,13 @@ function normalizeCfg(cfg) {
 
   merged.biz = { ...base.biz, ...(cfg?.biz || {}) };
   merged.catalog = cfg?.catalog?.categories ? cfg.catalog : base.catalog;
-  merged.templates = cfg?.templates ? {
-    notes: Array.isArray(cfg.templates.notes) ? cfg.templates.notes : base.templates.notes,
-    warranties: Array.isArray(cfg.templates.warranties) ? cfg.templates.warranties : base.templates.warranties,
-    terms: Array.isArray(cfg.templates.terms) ? cfg.templates.terms : base.templates.terms
-  } : base.templates;
+  merged.templates = cfg?.templates
+    ? {
+        notes: Array.isArray(cfg.templates.notes) ? cfg.templates.notes : base.templates.notes,
+        warranties: Array.isArray(cfg.templates.warranties) ? cfg.templates.warranties : base.templates.warranties,
+        terms: Array.isArray(cfg.templates.terms) ? cfg.templates.terms : base.templates.terms
+      }
+    : base.templates;
 
   merged.catalog.categories = (merged.catalog.categories || []).map((c) => ({
     id: String(c.id || uid("cat")),
@@ -202,17 +210,6 @@ function normalizeCfg(cfg) {
       terms: String(s.terms || "")
     }))
   }));
-
-  const fixTpl = (arr, fallback) =>
-    (Array.isArray(arr) ? arr : fallback).map((x) => ({
-      id: String(x.id || uid("tpl")),
-      name: String(x.name || "Plantilla"),
-      text: String(x.text || "")
-    }));
-
-  merged.templates.notes = fixTpl(merged.templates.notes, base.templates.notes);
-  merged.templates.warranties = fixTpl(merged.templates.warranties, base.templates.warranties);
-  merged.templates.terms = fixTpl(merged.templates.terms, base.templates.terms);
 
   return merged;
 }
@@ -283,7 +280,6 @@ function ensureAuthButtons() {
 
 function refreshAuthUI() {
   const isOn = !!state.user;
-
   if ($("btnLogin")) $("btnLogin").style.display = isOn ? "none" : "grid";
   if ($("btnLogout")) $("btnLogout").style.display = isOn ? "grid" : "none";
 
@@ -295,8 +291,7 @@ function refreshAuthUI() {
     "btnClearHist",
     "btnAddCustomer",
     "btnExportBackup",
-    "btnRestoreBackup",
-    "btnSaveBiz"
+    "btnRestoreBackup"
   ].forEach((id) => {
     if ($(id)) $(id).disabled = !isOn;
   });
@@ -339,6 +334,7 @@ async function loadAllFromFirestore() {
   renderCustomers();
   renderReporting();
   syncFormFromState();
+  renderItemsMobile();
 }
 
 async function saveSettingsToFirestore() {
@@ -365,12 +361,10 @@ async function exportBackupFile() {
   const payload = await buildBackupPayload();
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
-
   const a = document.createElement("a");
   a.href = url;
   a.download = `nexus_invoicing_mobile_backup_${toISODate(new Date())}.json`;
   a.click();
-
   setTimeout(() => URL.revokeObjectURL(url), 800);
 }
 
@@ -420,27 +414,11 @@ function setView(view) {
   document.querySelectorAll(".bottomLink").forEach((b) => b.classList.remove("is-active"));
   document.querySelectorAll(`.bottomLink[data-view="${view}"]`).forEach((b) => b.classList.add("is-active"));
 
-  if (view === "home") {
-    refreshKPIs();
-  }
-  if (view === "invoicing") {
-    renderInvoicing();
-  }
-  if (view === "customers") {
-    renderCustomers();
-  }
-  if (view === "history") {
-    renderHistory();
-  }
-  if (view === "reporting") {
-    renderReporting();
-  }
-  if (view === "configuration") {
-    renderConfiguration();
-  }
-  if (view === "preview") {
-    makePreview();
-  }
+  if (view === "home") refreshKPIs();
+  if (view === "invoicing") renderInvoicing();
+  if (view === "customers") renderCustomers();
+  if (view === "history") renderHistory();
+  if (view === "reporting") renderReporting();
 }
 
 function syncFormFromState() {
@@ -497,23 +475,22 @@ function buildCategoryOptions(selectedCat = "") {
 
 function renderItemsMobile() {
   const wrap = $("items");
-  if (!wrap) return;
+  if (!wrap || !state.current) return;
 
   wrap.innerHTML = "";
 
-  const items = state.current?.items || [];
+  const items = state.current.items || [];
   if (!items.length) {
     wrap.innerHTML = `<div class="listCard"><div class="listTitle">Sin items</div><div class="listSub">Añade una línea para comenzar.</div></div>`;
     return;
   }
 
   items.forEach((it) => {
+    const total = Number(it.qty || 0) * Number(it.price || 0);
+
     const card = document.createElement("article");
     card.className = "mobileItemCard";
     card.dataset.itemId = it.id;
-
-    const total = Number(it.qty || 0) * Number(it.price || 0);
-
     card.innerHTML = `
       <div class="mobileItemGrid">
         <div class="itemRow2">
@@ -545,7 +522,7 @@ function renderItemsMobile() {
 
         <div class="itemTotal">
           <span>Total</span>
-          <strong>${fmtMoney(total)}</strong>
+          <strong class="item-total-value">${fmtMoney(total)}</strong>
         </div>
 
         <button class="itemDelete" type="button">Eliminar item</button>
@@ -557,13 +534,19 @@ function renderItemsMobile() {
     const descInput = card.querySelector(".item-desc");
     const qtyInput = card.querySelector(".item-qty");
     const priceInput = card.querySelector(".item-price");
+    const totalLabel = card.querySelector(".item-total-value");
     const delBtn = card.querySelector(".itemDelete");
+
+    const refreshRowTotal = () => {
+      totalLabel.textContent = fmtMoney(Number(it.qty || 0) * Number(it.price || 0));
+    };
 
     catSel.addEventListener("change", () => {
       it.catId = catSel.value || "";
       it.svcId = "";
       svcSel.innerHTML = buildServiceOptions(it.catId, "");
       updateTotalsLive();
+      refreshRowTotal();
     });
 
     svcSel.addEventListener("change", () => {
@@ -575,6 +558,7 @@ function renderItemsMobile() {
 
       it.desc = svc.desc || svc.name || "";
       it.price = Number(svc.price || 0);
+
       descInput.value = it.desc;
       priceInput.value = String(it.price);
 
@@ -589,7 +573,7 @@ function renderItemsMobile() {
       }
 
       updateTotalsLive();
-      renderItemsMobile();
+      refreshRowTotal();
     });
 
     descInput.addEventListener("input", () => {
@@ -599,13 +583,13 @@ function renderItemsMobile() {
     qtyInput.addEventListener("input", () => {
       it.qty = Number(qtyInput.value || 0);
       updateTotalsLive();
-      renderItemsMobile();
+      refreshRowTotal();
     });
 
     priceInput.addEventListener("input", () => {
       it.price = Number(priceInput.value || 0);
       updateTotalsLive();
-      renderItemsMobile();
+      refreshRowTotal();
     });
 
     delBtn.addEventListener("click", () => {
@@ -635,13 +619,11 @@ function updateTotalsLive() {
 
   const tax = sub * (taxRate / 100);
   const grand = sub + tax;
-
   state.current.totals = { sub, tax, grand };
 
   if ($("subTotal")) $("subTotal").textContent = fmtMoney(sub);
   if ($("taxTotal")) $("taxTotal").textContent = fmtMoney(tax);
   if ($("grandTotal")) $("grandTotal").textContent = fmtMoney(grand);
-  if ($("kpiLastTotal")) $("kpiLastTotal").textContent = fmtMoney(grand);
   if ($("kpiTax")) $("kpiTax").textContent = `${taxRate.toFixed(2)}%`;
 }
 
@@ -714,7 +696,6 @@ async function deleteDocCloud() {
   await deleteDoc(doc(db, `${userBase(state.user.uid)}/docs/${state.activeDocId}`));
   state.activeDocId = null;
   state.current = newDoc();
-
   syncFormFromState();
   updateTotalsLive();
   renderItemsMobile();
@@ -791,7 +772,7 @@ function renderHistory() {
           <div class="metaValue">${fmtMoney(d.totals?.grand || 0)}</div>
         </div>
         <div class="metaBlock">
-          <div class="metaLabel">Contacto</div>
+          <div class="metaLabel">Cliente</div>
           <div class="metaValue">${escapeHtml(d.client?.contact || "—")}</div>
         </div>
       </div>
@@ -802,25 +783,30 @@ function renderHistory() {
       </div>
     `;
 
-    card.querySelector(".hist-open").addEventListener("click", () => loadDocFromHistory(d.id));
-    card.querySelector(".hist-pdf").addEventListener("click", async () => {
+    card.querySelector(".hist-open").onclick = () => loadDocFromHistory(d.id);
+    card.querySelector(".hist-pdf").onclick = async () => {
       await loadDocFromHistory(d.id);
       await confirmPDF();
-    });
+    };
 
     body.appendChild(card);
   });
-
-  refreshKPIs();
 }
 
 function refreshKPIs() {
-  if ($("kpiDocs")) $("kpiDocs").textContent = String((state.docs || []).length);
-  if ($("kpiCustomers")) $("kpiCustomers").textContent = String((state.customers || []).length);
+  const docs = state.docs || [];
+  const customers = state.customers || [];
+
+  const totalFacturado = docs
+    .filter((d) => d.type === "FAC")
+    .reduce((acc, d) => acc + Number(d.totals?.grand || 0), 0);
+
+  if ($("kpiDocs")) $("kpiDocs").textContent = String(docs.length);
+  if ($("kpiCustomers")) $("kpiCustomers").textContent = String(customers.length);
+  if ($("kpiLastTotal")) $("kpiLastTotal").textContent = fmtMoney(totalFacturado);
 
   const cfg = state.cfg || defaultCfg();
   if ($("kpiTax")) $("kpiTax").textContent = `${Number(cfg.taxRate || 11.5).toFixed(2)}%`;
-  if ($("kpiLastTotal")) $("kpiLastTotal").textContent = fmtMoney(state.current?.totals?.grand || 0);
 }
 
 function renderReporting() {
@@ -890,21 +876,21 @@ function renderCustomers() {
       </div>
     `;
 
-    card.querySelector(".use-customer").addEventListener("click", () => {
+    card.querySelector(".use-customer").onclick = () => {
       state.current.client.name = c.name || "";
       state.current.client.contact = c.contact || "";
       state.current.client.addr = c.addr || "";
       syncFormFromState();
       setView("invoicing");
       window.scrollTo({ top: 0, behavior: "smooth" });
-    });
+    };
 
-    card.querySelector(".del-customer").addEventListener("click", async () => {
+    card.querySelector(".del-customer").onclick = async () => {
       if (!state.user) return alert("Login requerido.");
       if (!confirm("¿Borrar cliente?")) return;
       await deleteDoc(doc(db, `${userBase(state.user.uid)}/customers/${c.id}`));
       await loadAllFromFirestore();
-    });
+    };
 
     wrap.appendChild(card);
   });
@@ -968,7 +954,6 @@ async function saveBiz() {
     await uploadBytes(r, file);
     const url = await getDownloadURL(r);
     cfg.biz.logoUrl = url;
-
     try {
       cfg.biz.logoDataUrl = await fileToDataUrl(file);
     } catch {}
@@ -983,14 +968,11 @@ async function saveBiz() {
   closeBiz();
 }
 
-function renderConfiguration() {}
-
 function renderInvoicing() {
   if (!state.current) state.current = newDoc();
   syncFormFromState();
   renderItemsMobile();
   updateTotalsLive();
-  refreshKPIs();
 }
 
 function buildPdfDoc() {
@@ -1150,7 +1132,9 @@ async function confirmPDF() {
 
   const cfg = state.cfg || defaultCfg();
   if (cfg?.biz?.logoUrl && !cfg.biz.logoDataUrl) {
-    try { cfg.biz.logoDataUrl = await urlToDataUrl(cfg.biz.logoUrl); } catch {}
+    try {
+      cfg.biz.logoDataUrl = await urlToDataUrl(cfg.biz.logoUrl);
+    } catch {}
   }
 
   try {
@@ -1247,7 +1231,7 @@ function bindEvents() {
     if (!state.user) return alert("Login requerido.");
     if (!confirm("¿Vaciar historial completo?")) return;
 
-    for (const d of (state.docs || [])) {
+    for (const d of state.docs || []) {
       await deleteDoc(doc(db, `${userBase(state.user.uid)}/docs/${d.id}`));
     }
     await loadAllFromFirestore();
@@ -1293,8 +1277,10 @@ function boot() {
   state.current = newDoc("COT");
 
   setView("home");
+  syncFormFromState();
   renderItemsMobile();
   updateTotalsLive();
+  refreshKPIs();
 
   onAuthStateChanged(auth, async (user) => {
     state.user = user || null;
@@ -1302,7 +1288,6 @@ function boot() {
 
     if (state.user) {
       await loadAllFromFirestore();
-      if (!state.cfg) state.cfg = normalizeCfg(defaultCfg());
     } else {
       state.cfg = normalizeCfg(defaultCfg());
       indexCatalog();
@@ -1314,6 +1299,7 @@ function boot() {
       renderReporting();
     }
 
+    if (!state.current) state.current = newDoc("COT");
     state.current.taxRate = Number(state.cfg.taxRate || 11.5);
     syncFormFromState();
     updateTotalsLive();
