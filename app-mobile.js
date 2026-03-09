@@ -113,6 +113,7 @@ let state = {
   docs: [],
   customers: [],
   cfg: null,
+  customerFormOpen: false,
   catalogIndex: { catById: new Map(), svcById: new Map() }
 };
 
@@ -520,7 +521,7 @@ function renderItemsMobile() {
           </div>
           <div class="field">
             <label>Precio</label>
-            <input class="input item-price" type="number" min="0" step="0.01" value="${Number(it.price ?? 0)}" />
+            <input class="input item-price" type="number" inputmode="decimal" min="0" step="0.01" value="${Number(it.price ?? 0)}" />
           </div>
         </div>
 
@@ -591,7 +592,8 @@ function renderItemsMobile() {
     });
 
     priceInput.addEventListener("input", () => {
-      it.price = Number(priceInput.value || 0);
+      const normalized = String(priceInput.value || "").replace(",", ".");
+      it.price = Number(normalized || 0);
       updateTotalsLive();
       refreshRowTotal();
     });
@@ -796,53 +798,17 @@ function renderHistory() {
   });
 }
 
-function renderLastTransactions() {
-  const body = $("lastTransactions");
-  if (!body) return;
-
-  body.innerHTML = "";
-
-  const rows = [...(state.docs || [])]
-    .sort((a, b) => {
-      const ad = String(a.updatedAt || a.createdAt || "");
-      const bd = String(b.updatedAt || b.createdAt || "");
-      return bd.localeCompare(ad);
-    })
-    .slice(0, 5);
-
-  if (!rows.length) {
-    body.innerHTML = `<div class="listCard"><div class="listTitle">Sin transacciones</div><div class="listSub">Todavía no hay movimientos recientes.</div></div>`;
-    return;
-  }
-
-  rows.forEach((d) => {
-    const card = document.createElement("article");
-    card.className = "listCard";
-    card.innerHTML = `
-      <div class="listCardTop">
-        <div>
-          <div class="listTitle">${escapeHtml(d.client?.name || d.number || "Documento")}</div>
-          <div class="listSub">${escapeHtml(d.date || "—")} · ${d.type === "FAC" ? "Factura" : "Cotización"}</div>
-        </div>
-        <div class="listTitle">${fmtMoney(d.totals?.grand || 0)}</div>
-      </div>
-    `;
-    body.appendChild(card);
-  });
-}
-
 function refreshKPIs() {
   const docs = state.docs || [];
   const customers = state.customers || [];
 
-  const pendingDocsCount = docs.filter((d) => d.status !== "PAGADA").length;
+  const pendingDocs = docs.filter((d) => d.status !== "PAGADA").length;
   const totalFacturado = docs
     .filter((d) => d.type === "FAC")
     .reduce((acc, d) => acc + Number(d.totals?.grand || 0), 0);
 
   if ($("kpiDocs")) $("kpiDocs").textContent = String(docs.length);
-  if ($("kpiPendingDocs")) $("kpiPendingDocs").textContent = String(pendingDocsCount);
-  if ($("kpiCustomers")) $("kpiCustomers").textContent = String(customers.length);
+  if ($("kpiPendingDocs")) $("kpiPendingDocs").textContent = String(pendingDocs);
   if ($("kpiLastTotal")) $("kpiLastTotal").textContent = fmtMoney(totalFacturado);
 }
 
@@ -862,11 +828,63 @@ function renderReporting() {
   if ($("repDocs")) $("repDocs").textContent = String(docs.length);
 }
 
+function renderLastTransactions() {
+  const wrap = $("lastTransactionsBody");
+  if (!wrap) return;
+
+  wrap.innerHTML = "";
+
+  const rows = [...(state.docs || [])]
+    .sort((a, b) => {
+      const left = String(b.updatedAt?.seconds || b.updatedAt || b.date || "");
+      const right = String(a.updatedAt?.seconds || a.updatedAt || a.date || "");
+      return left.localeCompare(right);
+    })
+    .slice(0, 5);
+
+  if (!rows.length) {
+    wrap.innerHTML = `<div class="listCard"><div class="listTitle">Sin transacciones</div><div class="listSub">Todavía no hay movimiento.</div></div>`;
+    return;
+  }
+
+  rows.forEach((d) => {
+    const card = document.createElement("article");
+    card.className = "listCard";
+    card.innerHTML = `
+      <div class="listCardTop">
+        <div>
+          <div class="listTitle">${escapeHtml(d.client?.name || d.number || "Documento")}</div>
+          <div class="listSub">${escapeHtml(d.date || "—")} · ${d.type === "FAC" ? "Factura" : "Cotización"}</div>
+        </div>
+        <div class="listTitle">${fmtMoney(d.totals?.grand || 0)}</div>
+      </div>
+    `;
+    wrap.appendChild(card);
+  });
+}
+
+function toggleCustomerForm(force = null) {
+  const card = $("customerFormCard");
+  const btn = $("btnToggleCustomerForm");
+  if (!card || !btn) return;
+
+  state.customerFormOpen = force === null ? !state.customerFormOpen : !!force;
+  card.classList.toggle("is-hidden", !state.customerFormOpen);
+  btn.textContent = state.customerFormOpen ? "Ocultar" : "Nuevo cliente";
+}
+
+function updateCustomerSearchClear() {
+  const btn = $("btnClearCustomerSearch");
+  const input = $("cSearch");
+  if (!btn || !input) return;
+  btn.classList.toggle("show", !!input.value.trim());
+}
+
 function renderCustomers() {
   const wrap = $("customersBody");
   if (!wrap) return;
 
-  if ($("kpiCustomers")) $("kpiCustomers").textContent = String((state.customers || []).length);
+  updateCustomerSearchClear();
 
   const q = (($("cSearch")?.value || "").trim().toLowerCase());
   let rows = [...(state.customers || [])];
@@ -955,6 +973,7 @@ async function addCustomer() {
   if ($("cAddr")) $("cAddr").value = "";
   if ($("cNote")) $("cNote").value = "";
 
+  toggleCustomerForm(false);
   await loadAllFromFirestore();
 }
 
@@ -1208,6 +1227,20 @@ function bindEvents() {
   $("btnCloseBiz")?.addEventListener("click", closeBiz);
   $("btnSaveBiz")?.addEventListener("click", saveBiz);
 
+  $("btnToggleCustomerForm")?.addEventListener("click", () => toggleCustomerForm());
+  $("btnCancelCustomerForm")?.addEventListener("click", () => toggleCustomerForm(false));
+
+  $("cSearch")?.addEventListener("input", () => {
+    updateCustomerSearchClear();
+    renderCustomers();
+  });
+
+  $("btnClearCustomerSearch")?.addEventListener("click", () => {
+    if ($("cSearch")) $("cSearch").value = "";
+    updateCustomerSearchClear();
+    renderCustomers();
+  });
+
   [
     "docType",
     "docNumber",
@@ -1275,7 +1308,6 @@ function bindEvents() {
   });
 
   $("btnAddCustomer")?.addEventListener("click", addCustomer);
-  $("cSearch")?.addEventListener("input", renderCustomers);
 
   $("btnExportBackup")?.addEventListener("click", async () => {
     try {
@@ -1319,6 +1351,8 @@ function boot() {
   updateTotalsLive();
   refreshKPIs();
   renderLastTransactions();
+  toggleCustomerForm(false);
+  updateCustomerSearchClear();
 
   onAuthStateChanged(auth, async (user) => {
     state.user = user || null;
