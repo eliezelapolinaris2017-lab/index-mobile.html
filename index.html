@@ -5,7 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>Nexus Invoicing Mobile</title>
 
-  <link rel="stylesheet" href="styles-mobile.css?v=20260308-2200" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <meta name="theme-color" content="#6d1d72" />
+  <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Nexus Invoicing" />
+
+  <link rel="stylesheet" href="styles-mobile.css?v=20260310-1940" />
 
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
@@ -16,7 +23,9 @@
 
     <header class="mobileTopbar">
       <div class="mobileBrand">
-        <div class="mobileLogo">N</div>
+        <div class="mobileLogo">
+          <img src="./assets/icons/header-logo.png" alt="Nexus Invoicing" class="mobileLogoImg" />
+        </div>
         <div>
           <div class="mobileTitle">Nexus Invoicing</div>
           <div class="mobileSub">Móvil</div>
