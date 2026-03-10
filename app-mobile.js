@@ -1238,8 +1238,8 @@ function buildPdfDoc() {
     docp.setDrawColor(230);
     docp.roundedRect(totX, payBoxY, totW, payBoxH, 10, 10, "FD");
 
-    docp.setFillColor(109, 29, 114);
-    docp.setDrawColor(109, 29, 114);
+    docp.setFillColor(225, 0, 168);
+    docp.setDrawColor(225, 0, 168);  
     docp.roundedRect(btnX, btnY, btnW, btnH, 10, 10, "FD");
 
     docp.setFont("helvetica", "bold");
