@@ -23,7 +23,6 @@
 
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
-
 html{-webkit-text-size-adjust:100%}
 
 body{
@@ -39,6 +38,64 @@ button{-webkit-tap-highlight-color:transparent}
 input,select,textarea{
   appearance:none;
   -webkit-appearance:none;
+}
+
+.appSplash{
+  position:fixed;
+  inset:0;
+  z-index:9999;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:
+    radial-gradient(circle at top, rgba(255,255,255,.65), rgba(255,255,255,0) 40%),
+    linear-gradient(180deg,#f4f5f9 0%, #eceff5 100%);
+  transition:opacity .45s ease, visibility .45s ease;
+}
+
+.appSplash.is-hidden{
+  opacity:0;
+  visibility:hidden;
+  pointer-events:none;
+}
+
+.appSplashCard{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  padding:28px;
+}
+
+.appSplashLogo{
+  width:140px;
+  height:140px;
+  object-fit:contain;
+  display:block;
+}
+
+.appSplashTitle{
+  margin-top:18px;
+  font-size:28px;
+  line-height:1.05;
+  font-weight:900;
+  letter-spacing:-.6px;
+  color:var(--text);
+}
+
+.appSplashReg{
+  font-size:.58em;
+  vertical-align:top;
+  margin-left:2px;
+}
+
+.appSplashSub{
+  margin-top:8px;
+  font-size:14px;
+  font-weight:700;
+  color:var(--muted);
+  letter-spacing:.2px;
 }
 
 .mobileApp{
@@ -150,22 +207,14 @@ input,select,textarea{
   box-shadow:var(--shadow);
 }
 
-.heroCard{
-  padding:16px;
-}
-
+.heroCard{padding:16px}
 .mobileSectionCard{
   padding:16px;
   margin-bottom:14px;
 }
 
-.compactCard{
-  margin-top:14px;
-}
-
-.previewCard{
-  padding-bottom:12px;
-}
+.compactCard{margin-top:14px}
+.previewCard{padding-bottom:12px}
 
 .heroHead,
 .sectionMiniHead{
@@ -274,9 +323,7 @@ input,select,textarea{
   padding:16px;
 }
 
-.moneyCard.small{
-  margin-top:0;
-}
+.moneyCard.small{margin-top:0}
 
 .moneyLabel{
   color:var(--muted);
@@ -326,9 +373,7 @@ input,select,textarea{
   gap:12px;
 }
 
-.field{
-  min-width:0;
-}
+.field{min-width:0}
 
 .field label{
   display:block;
@@ -359,9 +404,7 @@ input,select,textarea{
   box-shadow:none;
 }
 
-.input::placeholder{
-  color:#a1a7b4;
-}
+.input::placeholder{color:#a1a7b4}
 
 .input:focus{
   border-color:#b786be;
@@ -487,9 +530,7 @@ textarea.input{
   margin:6px 0 18px;
 }
 
-.flex1{
-  width:100%;
-}
+.flex1{width:100%}
 
 .mobileListCards{
   display:flex;
@@ -498,9 +539,7 @@ textarea.input{
   margin-top:12px;
 }
 
-.compactList .listCard{
-  padding:12px 14px;
-}
+.compactList .listCard{padding:12px 14px}
 
 .listCard{
   background:var(--surface-2);
@@ -566,13 +605,9 @@ textarea.input{
   margin-top:12px;
 }
 
-.searchWrap{
-  position:relative;
-}
+.searchWrap{position:relative}
 
-.searchInput{
-  padding-right:48px;
-}
+.searchInput{padding-right:48px}
 
 .searchClear{
   position:absolute;
@@ -691,9 +726,7 @@ textarea.input{
   cursor:not-allowed;
 }
 
-.btn.ghost{
-  background:#fff;
-}
+.btn.ghost{background:#fff}
 
 .btn.primary{
   background:linear-gradient(180deg,var(--primary),var(--primary-2));
@@ -815,6 +848,15 @@ textarea.input{
 
   .mobilePreviewBox{
     min-height:460px;
+  }
+
+  .appSplashLogo{
+    width:120px;
+    height:120px;
+  }
+
+  .appSplashTitle{
+    font-size:24px;
   }
 }
 
