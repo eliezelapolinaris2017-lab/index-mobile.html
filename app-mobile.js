@@ -1112,14 +1112,14 @@ function buildPdfDoc() {
 
   if (biz.logoDataUrl && String(biz.logoDataUrl).startsWith("data:image/")) {
     try {
-      const imgW = 60;
-      const imgH = 60;
+      const imgW = 80;
+      const imgH = 80;
       const imgX = W - margin - imgW;
-      const imgY = 20;
+      const imgY = 18;
       const format = biz.logoDataUrl.startsWith("data:image/png") ? "PNG" : "JPEG";
 
       docp.addImage(biz.logoDataUrl, format, imgX, imgY, imgW, imgH);
-      textTopY = imgY + imgH + 8;
+      textTopY = imgY + imgH + 6;
     } catch (err) {
       console.error("Error renderizando logo en PDF:", err);
     }
