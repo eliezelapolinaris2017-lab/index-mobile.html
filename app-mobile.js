@@ -41,6 +41,15 @@ const storage = getStorage(FB_APP);
 
 const $ = (id) => document.getElementById(id);
 
+function hideSplashScreen() {
+  const splash = $("appSplash");
+  if (!splash) return;
+
+  setTimeout(() => {
+    splash.classList.add("is-hidden");
+  }, 2200);
+}
+
 const fmtMoney = (n) => {
   const x = Number(n || 0);
   return x.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -1430,6 +1439,7 @@ function bindEvents() {
 function boot() {
   ensureAuthButtons();
   bindEvents();
+  hideSplashScreen();
 
   state.cfg = normalizeCfg(defaultCfg());
   indexCatalog();
