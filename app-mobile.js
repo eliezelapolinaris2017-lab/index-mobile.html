@@ -76,29 +76,10 @@ async function blobToDataUrl(blob) {
   });
 }
 
-async function urlToBlob(url) {
-  const resp = await fetch(url, { cache: "no-store", mode: "cors" });
-  if (!resp.ok) throw new Error("No se pudo descargar el logo.");
-  return await resp.blob();
-}
-
-async function loadImageFromUrl(url) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("No se pudo cargar imagen."));
-    img.src = url;
-  });
-}
-
-async function loadImageFromDataUrl(dataUrl) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("No se pudo cargar data URL."));
-    img.src = dataUrl;
-  });
+async function urlToDataUrl(url) {
+  const resp = await fetch(url, { cache: "no-store" });
+  const blob = await resp.blob();
+  return blobToDataUrl(blob);
 }
 
 async function fileToDataUrl(file) {
@@ -110,43 +91,60 @@ async function fileToDataUrl(file) {
   });
 }
 
-async function imageToPngDataUrl(img, maxSide = 1200) {
-  const ratio = img.width && img.height ? img.width / img.height : 1;
-  let w = img.width || 600;
-  let h = img.height || 600;
+async function imageSourceToDataUrl(source) {
+  if (!source) return "";
 
-  if (w >= h && w > maxSide) {
-    w = maxSide;
-    h = Math.round(w / ratio);
-  } else if (h > w && h > maxSide) {
-    h = maxSide;
-    w = Math.round(h * ratio);
+  if (typeof source === "string") {
+    if (source.startsWith("data:image/")) return source;
+    const resp = await fetch(source, { cache: "no-store" });
+    const blob = await resp.blob();
+    return await blobToDataUrl(blob);
   }
 
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, w);
-  canvas.height = Math.max(1, h);
+  if (source instanceof Blob || source instanceof File) {
+    return await fileToDataUrl(source);
+  }
 
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas no disponible.");
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-  return canvas.toDataURL("image/png");
+  return "";
 }
 
-async function fileToPdfReadyDataUrl(file) {
-  const rawDataUrl = await fileToDataUrl(file);
-  const img = await loadImageFromDataUrl(rawDataUrl);
-  return await imageToPngDataUrl(img, 1200);
-}
+async function normalizeLogoForPdf(source) {
+  const rawDataUrl = await imageSourceToDataUrl(source);
+  if (!rawDataUrl) return "";
 
-async function urlToPdfReadyDataUrl(url) {
-  const blob = await urlToBlob(url);
-  const rawDataUrl = await blobToDataUrl(blob);
-  const img = await loadImageFromDataUrl(rawDataUrl);
-  return await imageToPngDataUrl(img, 1200);
+  return await new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const maxSide = 900;
+        let { width, height } = img;
+
+        if (width > height && width > maxSide) {
+          height = Math.round((height * maxSide) / width);
+          width = maxSide;
+        } else if (height >= width && height > maxSide) {
+          width = Math.round((width * maxSide) / height);
+          height = maxSide;
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const jpgDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+        resolve(jpgDataUrl);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    img.onerror = reject;
+    img.src = rawDataUrl;
+  });
 }
 
 function userBase(uid_) {
@@ -372,11 +370,11 @@ async function loadAllFromFirestore() {
   const snap = await getDoc(sref);
   state.cfg = snap.exists() ? normalizeCfg(snap.data()) : normalizeCfg(defaultCfg());
 
-  if (state.cfg?.biz?.logoUrl && !state.cfg.biz.logoDataUrl) {
+  if (state.cfg?.biz?.logoUrl) {
     try {
-      state.cfg.biz.logoDataUrl = await urlToPdfReadyDataUrl(state.cfg.biz.logoUrl);
+      state.cfg.biz.logoDataUrl = await normalizeLogoForPdf(state.cfg.biz.logoUrl);
     } catch (err) {
-      console.error("Logo normalize fail from URL:", err);
+      console.error("Error normalizando logo desde Storage:", err);
       state.cfg.biz.logoDataUrl = "";
     }
   }
@@ -861,6 +859,7 @@ function renderHistory() {
 
 function refreshKPIs() {
   const docs = state.docs || [];
+
   const pendingDocs = docs.filter((d) => d.status !== "PAGADA").length;
   const totalFacturado = docs
     .filter((d) => d.type === "FAC")
@@ -895,9 +894,9 @@ function renderLastTransactions() {
 
   const rows = [...(state.docs || [])]
     .sort((a, b) => {
-      const av = typeof a.updatedAt === "object" && a.updatedAt?.seconds ? a.updatedAt.seconds : Date.parse(a.updatedAt || a.date || 0);
-      const bv = typeof b.updatedAt === "object" && b.updatedAt?.seconds ? b.updatedAt.seconds : Date.parse(b.updatedAt || b.date || 0);
-      return Number(bv || 0) - Number(av || 0);
+      const av = a?.updatedAt?.seconds ? Number(a.updatedAt.seconds) : new Date(a.updatedAt || a.date || 0).getTime();
+      const bv = b?.updatedAt?.seconds ? Number(b.updatedAt.seconds) : new Date(b.updatedAt || b.date || 0).getTime();
+      return bv - av;
     })
     .slice(0, 5);
 
@@ -1063,30 +1062,37 @@ async function saveBiz() {
   cfg.taxRate = Number($("taxRate")?.value || 11.5);
 
   const file = $("bizLogo")?.files?.[0];
+
   if (file) {
-    const path = `users/${state.user.uid}/logo_${Date.now()}_${file.name}`;
-    const r = ref(storage, path);
-
-    await uploadBytes(r, file);
-    const url = await getDownloadURL(r);
-
-    cfg.biz.logoUrl = url;
-
     try {
-      cfg.biz.logoDataUrl = await fileToPdfReadyDataUrl(file);
+      const path = `users/${state.user.uid}/logo_${Date.now()}_${file.name}`;
+      const r = ref(storage, path);
+
+      await uploadBytes(r, file);
+      const url = await getDownloadURL(r);
+
+      cfg.biz.logoUrl = url;
+      cfg.biz.logoDataUrl = await normalizeLogoForPdf(file);
     } catch (err) {
-      console.error("Logo normalize fail from file:", err);
-      cfg.biz.logoDataUrl = "";
+      console.error("Error subiendo o procesando logo:", err);
+      alert("El logo no se pudo procesar correctamente.");
+      return;
     }
   }
 
   state.cfg = normalizeCfg(cfg);
-  await saveSettingsToFirestore();
-  indexCatalog();
-  refreshKPIs();
-  updateTotalsLive();
-  alert("Empresa guardada ✅");
-  closeBiz();
+
+  try {
+    await saveSettingsToFirestore();
+    indexCatalog();
+    refreshKPIs();
+    updateTotalsLive();
+    alert("Empresa guardada ✅");
+    closeBiz();
+  } catch (err) {
+    console.error("Error guardando empresa:", err);
+    alert("No se pudo guardar la empresa.");
+  }
 }
 
 function renderInvoicing() {
@@ -1128,14 +1134,15 @@ function buildPdfDoc() {
 
   if (biz.logoDataUrl) {
     try {
-      const imgW = 54;
-      const imgH = 54;
+      const imgW = 60;
+      const imgH = 60;
       const imgX = W - margin - imgW;
-      const imgY = 24;
-      docp.addImage(biz.logoDataUrl, "PNG", imgX, imgY, imgW, imgH);
-      textTopY = imgY + imgH + 10;
+      const imgY = 20;
+
+      docp.addImage(biz.logoDataUrl, "JPEG", imgX, imgY, imgW, imgH);
+      textTopY = imgY + imgH + 8;
     } catch (err) {
-      console.error("PDF logo render fail:", err);
+      console.error("Error renderizando logo en PDF:", err);
     }
   }
 
@@ -1253,8 +1260,7 @@ function makePreview() {
     state.previewBlobUrl = URL.createObjectURL(blob);
     if ($("pdfFrame")) $("pdfFrame").src = state.previewBlobUrl;
     setView("preview");
-  } catch (err) {
-    console.error(err);
+  } catch {
     alert("No se pudo generar preview.");
   }
 }
@@ -1265,9 +1271,10 @@ async function confirmPDF() {
   const cfg = state.cfg || defaultCfg();
   if (cfg?.biz?.logoUrl && !cfg.biz.logoDataUrl) {
     try {
-      cfg.biz.logoDataUrl = await urlToPdfReadyDataUrl(cfg.biz.logoUrl);
+      cfg.biz.logoDataUrl = await normalizeLogoForPdf(cfg.biz.logoUrl);
+      state.cfg = normalizeCfg(cfg);
     } catch (err) {
-      console.error("Lazy logo normalize fail:", err);
+      console.error("Error cargando logo para PDF:", err);
     }
   }
 
@@ -1277,7 +1284,7 @@ async function confirmPDF() {
     pdf.save(file);
     makePreview();
   } catch (err) {
-    console.error(err);
+    console.error("PDF falló:", err);
     alert("PDF falló.");
   }
 }
