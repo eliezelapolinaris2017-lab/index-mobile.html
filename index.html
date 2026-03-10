@@ -12,12 +12,20 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Nexus Invoicing" />
 
-  <link rel="stylesheet" href="styles-mobile.css?v=20260310-1940" />
+  <link rel="stylesheet" href="styles-mobile.css?v=20260310-2100" />
 
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
+
+  <div id="appSplash" class="appSplash">
+    <div class="appSplashCard">
+      <img src="./assets/icons/splash-logo.png.PNG" alt="Nexus Invoicing" class="appSplashLogo" />
+      <div class="appSplashTitle">Nexus Invoicing <span class="appSplashReg">®</span></div>
+      <div class="appSplashSub">Móvil</div>
+    </div>
+  </div>
 
   <div class="mobileApp">
 
@@ -39,7 +47,6 @@
 
     <main class="mobileContent">
 
-      <!-- HOME / DASHBOARD -->
       <section class="view is-active" id="view-home">
         <section class="heroStack">
           <article class="heroCard">
@@ -90,7 +97,6 @@
         </section>
       </section>
 
-      <!-- EDITOR -->
       <section class="view" id="view-invoicing">
         <section class="mobileSectionCard">
           <div class="sectionMiniHead">
@@ -199,7 +205,6 @@
         </section>
       </section>
 
-      <!-- CUSTOMERS -->
       <section class="view" id="view-customers">
         <section class="mobileSectionCard">
           <div class="sectionMiniHead">
@@ -236,7 +241,6 @@
         </section>
       </section>
 
-      <!-- HISTORY -->
       <section class="view" id="view-history">
         <section class="mobileSectionCard">
           <div class="sectionMiniHead">
@@ -251,42 +255,6 @@
         </section>
       </section>
 
-      <!-- REPORTING -->
-      <section class="view" id="view-reporting">
-        <section class="heroStack">
-          <article class="heroCard">
-            <div class="heroHead">
-              <div>
-                <div class="heroTitle">Reporting</div>
-                <div class="heroHint">Lectura rápida</div>
-              </div>
-            </div>
-
-            <div class="mobileKpis">
-              <article class="miniRadialCard">
-                <div class="miniRadial ring-a">
-                  <div class="miniRadialInner">
-                    <strong id="repDocs">0</strong>
-                    <span>Docs</span>
-                  </div>
-                </div>
-              </article>
-
-              <article class="moneyCard small">
-                <div class="moneyLabel">Pendientes</div>
-                <div class="moneyValue" id="repPending">$0.00</div>
-              </article>
-
-              <article class="moneyCard small">
-                <div class="moneyLabel">Pagadas</div>
-                <div class="moneyValue" id="repPaid">$0.00</div>
-              </article>
-            </div>
-          </article>
-        </section>
-      </section>
-
-      <!-- CONFIG -->
       <section class="view" id="view-configuration">
         <section class="mobileSectionCard">
           <div class="sectionMiniHead">
@@ -319,7 +287,6 @@
         </section>
       </section>
 
-      <!-- PREVIEW FULL -->
       <section class="view" id="view-preview">
         <section class="mobileSectionCard previewCard">
           <div class="sectionMiniHead">
@@ -398,6 +365,6 @@
     </div>
   </div>
 
-  <script type="module" src="app-mobile.js?v=20260308-2200"></script>
+  <script type="module" src="app-mobile.js?v=20260310-2100"></script>
 </body>
 </html>
