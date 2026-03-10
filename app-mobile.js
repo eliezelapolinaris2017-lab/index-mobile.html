@@ -1219,30 +1219,30 @@ function buildPdfDoc() {
 
   if (paymentLink) {
     const payBoxY = totY + 86;
-    const payBoxH = 54;
+    const payBoxH = 60;
+    const btnX = totX + 12;
+    const btnY = payBoxY + 12;
+    const btnW = totW - 24;
+    const btnH = 36;
 
-    docp.setFillColor(248, 248, 248);
-    docp.setDrawColor(220);
+    docp.setFillColor(245, 245, 245);
+    docp.setDrawColor(230);
     docp.roundedRect(totX, payBoxY, totW, payBoxH, 10, 10, "FD");
 
+    docp.setFillColor(109, 29, 114);
+    docp.setDrawColor(109, 29, 114);
+    docp.roundedRect(btnX, btnY, btnW, btnH, 10, 10, "FD");
+
     docp.setFont("helvetica", "bold");
-    docp.setFontSize(10);
+    docp.setFontSize(11);
+    docp.setTextColor(255, 255, 255);
+    docp.text(paymentLabel, btnX + btnW / 2, btnY + 23, { align: "center" });
+
+    docp.link(btnX, btnY, btnW, btnH, { url: paymentLink });
     docp.setTextColor(20);
-    docp.text("Pago", totX + 12, payBoxY + 18);
-
-    docp.setFont("helvetica", "normal");
-    docp.setFontSize(10);
-    docp.setTextColor(0, 102, 204);
-
-    const linkTextY = payBoxY + 36;
-    docp.text(paymentLabel, totX + 12, linkTextY);
-
-    const textWidth = docp.getTextWidth(paymentLabel);
-    docp.line(totX + 12, linkTextY + 2, totX + 12 + textWidth, linkTextY + 2);
-    docp.link(totX + 12, linkTextY - 10, textWidth, 14, { url: paymentLink });
   }
 
-  let textY = totY + (paymentLink ? 158 : 98);
+  let textY = totY + (paymentLink ? 164 : 98);
   docp.setFont("helvetica", "bold");
   docp.setTextColor(20);
   docp.text("Notas", margin, textY);
