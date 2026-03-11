@@ -219,8 +219,8 @@ function defaultTemplates() {
 function defaultCfg() {
   return {
     biz: {
-      name: "Oasis Air Cleaner Services LLC",
-      phone: "787-664-3079",
+      name: "Tu Empresa",
+      phone: "Numero de telefono",
       email: "",
       addr: "Puerto Rico",
       paymentLabel: "Pagar ahora",
