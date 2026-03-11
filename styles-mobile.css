@@ -66,17 +66,19 @@ input,select,textarea{
   justify-content:center;
   text-align:center;
   padding:28px;
+  transform:translateY(-24px);
 }
 
 .appSplashLogo{
-  width:140px;
-  height:140px;
+  width:240px;
+  height:240px;
   object-fit:contain;
   display:block;
+  margin-bottom:8px;
 }
 
 .appSplashTitle{
-  margin-top:18px;
+  margin-top:6px;
   font-size:28px;
   line-height:1.05;
   font-weight:900;
