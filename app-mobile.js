@@ -336,6 +336,7 @@ function refreshAuthUI() {
   [
     "btnSaveDoc",
     "btnPDF",
+    "btnSMS",
     "btnConfirmFromPreview",
     "btnExportHist",
     "btnClearHist",
@@ -1239,7 +1240,7 @@ function buildPdfDoc() {
     docp.roundedRect(totX, payBoxY, totW, payBoxH, 10, 10, "FD");
 
     docp.setFillColor(225, 0, 168);
-    docp.setDrawColor(225, 0, 168);  
+    docp.setDrawColor(225, 0, 168);
     docp.roundedRect(btnX, btnY, btnW, btnH, 10, 10, "FD");
 
     docp.setFont("helvetica", "bold");
@@ -1299,6 +1300,92 @@ async function confirmPDF() {
   } catch (err) {
     console.error("PDF falló:", err);
     alert("PDF falló.");
+  }
+}
+
+function extractPhoneFromContact(raw) {
+  const txt = String(raw || "").trim();
+  if (!txt) return "";
+
+  const parts = txt.split(/[,\s/|]+/).filter(Boolean);
+  const candidate = parts.find((p) => /[\d]/.test(p)) || txt;
+
+  let cleaned = candidate.replace(/[^\d+]/g, "");
+
+  if (cleaned.startsWith("+")) {
+    cleaned = `+${cleaned.slice(1).replace(/[^\d]/g, "")}`;
+  } else {
+    cleaned = cleaned.replace(/[^\d]/g, "");
+  }
+
+  return cleaned;
+}
+
+async function uploadInvoicePdfAndGetUrl() {
+  if (!state.user) throw new Error("Login requerido.");
+
+  readDocHeaderIntoState();
+  updateTotalsLive();
+
+  if (!state.current.number) {
+    await saveCurrentToHistory({ forceNumber: true });
+  }
+
+  const pdf = buildPdfDoc();
+  const pdfBlob = pdf.output("blob");
+  const fileName = `${state.current.type}_${state.current.number}.pdf`;
+  const path = `users/${state.user.uid}/sent-pdfs/${fileName}`;
+  const storageRef = ref(storage, path);
+
+  await uploadBytes(storageRef, pdfBlob, { contentType: "application/pdf" });
+  const pdfUrl = await getDownloadURL(storageRef);
+
+  await setDoc(
+    doc(db, `${userBase(state.user.uid)}/docs/${state.current.id}`),
+    {
+      lastPdfUrl: pdfUrl,
+      lastPdfSentAt: serverTimestamp()
+    },
+    { merge: true }
+  );
+
+  return pdfUrl;
+}
+
+async function sendInvoiceBySMS() {
+  try {
+    if (!state.user) return alert("Login requerido.");
+
+    readDocHeaderIntoState();
+    updateTotalsLive();
+
+    const phone = extractPhoneFromContact(state.current.client?.contact || "");
+    if (!phone) {
+      alert("El contacto del cliente no tiene un número válido para SMS.");
+      return;
+    }
+
+    if (!state.current.client?.name?.trim()) {
+      alert("Añade el nombre del cliente antes de enviar el SMS.");
+      return;
+    }
+
+    const pdfUrl = await uploadInvoicePdfAndGetUrl();
+
+    const message =
+      `Hola ${state.current.client.name}, aquí tienes tu ${state.current.type === "FAC" ? "factura" : "cotización"} ${state.current.number} ` +
+      `por ${fmtMoney(state.current.totals.grand)}.\n` +
+      `Descárgala aquí: ${pdfUrl}`;
+
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const smsUrl = isIOS
+      ? `sms:${phone};?&body=${encodeURIComponent(message)}`
+      : `sms:${phone}?body=${encodeURIComponent(message)}`;
+
+    window.location.href = smsUrl;
+  } catch (err) {
+    console.error("SMS falló:", err);
+    alert("No se pudo preparar el SMS.");
   }
 }
 
@@ -1380,6 +1467,7 @@ function bindEvents() {
   });
 
   $("btnPDF")?.addEventListener("click", confirmPDF);
+  $("btnSMS")?.addEventListener("click", sendInvoiceBySMS);
   $("btnConfirmFromPreview")?.addEventListener("click", confirmPDF);
   $("btnRefreshPreview")?.addEventListener("click", makePreview);
   $("btnDuplicate")?.addEventListener("click", duplicateDoc);
