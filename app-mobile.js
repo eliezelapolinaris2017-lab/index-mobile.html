@@ -42,11 +42,11 @@ const storage = getStorage(FB_APP);
 const $ = (id) => document.getElementById(id);
 
 const CACHE_KEYS = {
-  docs: "nexus_inv_mobile_cache_docs_v7",
-  customers: "nexus_inv_mobile_cache_customers_v7",
-  cfg: "nexus_inv_mobile_cache_cfg_v7",
-  current: "nexus_inv_mobile_cache_current_v7",
-  activeDocId: "nexus_inv_mobile_cache_activeDocId_v7"
+  docs: "nexus_inv_mobile_cache_docs_v8",
+  customers: "nexus_inv_mobile_cache_customers_v8",
+  cfg: "nexus_inv_mobile_cache_cfg_v8",
+  current: "nexus_inv_mobile_cache_current_v8",
+  activeDocId: "nexus_inv_mobile_cache_activeDocId_v8"
 };
 
 const state = {
@@ -1119,7 +1119,7 @@ async function saveBiz() {
 async function buildBackupPayload() {
   return {
     exportedAt: new Date().toISOString(),
-    version: "nexus_invoicing_mobile_backup_local_v7",
+    version: "nexus_invoicing_mobile_backup_local_v8",
     docs: state.docs || [],
     customers: state.customers || [],
     cfg: state.cfg || defaultCfg()
@@ -1194,54 +1194,51 @@ function buildPdfDoc() {
   const pdf = new jsPDF("p", "pt", "letter");
   const cfg = state.cfg || defaultCfg();
   const biz = cfg.biz || {};
-  const docData = state.current;
+  const d = state.current;
 
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
   const margin = 44;
-  let y = 48;
+  const rightX = pageW - margin;
+  let y = 52;
 
+  // Empresa izquierda
   pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(20);
+  pdf.setFontSize(19);
   pdf.text(String(biz.name || "Tu Empresa"), margin, y);
 
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(10);
-  y += 22;
+  y += 24;
 
-  const bizLines = [
-    biz.phone || "",
-    biz.email || "",
-    biz.addr || ""
-  ].filter(Boolean);
-
+  const bizLines = [biz.phone || "", biz.email || "", biz.addr || ""].filter(Boolean);
   bizLines.forEach((line) => {
     pdf.text(String(line), margin, y);
     y += 14;
   });
 
-  const rightX = pageW - margin;
-  let headerY = 48;
-
+  // Título derecha
+  let headerY = 52;
   pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(20);
-  pdf.text(docData.type === "FAC" ? "FACTURA" : "COTIZACIÓN", rightX, headerY, { align: "right" });
+  pdf.setFontSize(19);
+  pdf.text(d.type === "FAC" ? "FACTURA" : "COTIZACIÓN", rightX, headerY, { align: "right" });
 
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(10);
   headerY += 24;
-  pdf.text(`Número: ${docData.number || "AUTO"}`, rightX, headerY, { align: "right" });
+  pdf.text(`Número: ${d.number || "AUTO"}`, rightX, headerY, { align: "right" });
   headerY += 16;
-  pdf.text(`Fecha: ${docData.date || "—"}`, rightX, headerY, { align: "right" });
+  pdf.text(`Fecha: ${d.date || "—"}`, rightX, headerY, { align: "right" });
   headerY += 16;
-  pdf.text(`Estado: ${docData.status || "PENDIENTE"}`, rightX, headerY, { align: "right" });
+  pdf.text(`Estado: ${d.status || "PENDIENTE"}`, rightX, headerY, { align: "right" });
 
   y = Math.max(y, headerY) + 16;
 
-  pdf.setDrawColor(225, 225, 225);
-  pdf.line(margin, y, pageW - margin, y);
+  pdf.setDrawColor(228, 228, 228);
+  pdf.line(margin, y, rightX, y);
   y += 22;
 
+  // Cliente
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(11);
   pdf.text("CLIENTE", margin, y);
@@ -1250,9 +1247,9 @@ function buildPdfDoc() {
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(10);
   const clientLines = [
-    docData.client?.name || "",
-    docData.client?.contact || "",
-    docData.client?.addr || ""
+    d.client?.name || "",
+    d.client?.contact || "",
+    d.client?.addr || ""
   ].filter(Boolean);
 
   clientLines.forEach((line) => {
@@ -1260,19 +1257,20 @@ function buildPdfDoc() {
     y += 14;
   });
 
-  if (docData.type === "COT" && docData.validUntil) {
+  if (d.type === "COT" && d.validUntil) {
     y += 10;
     pdf.setFont("helvetica", "bold");
     pdf.text("Válida hasta", margin, y);
     y += 16;
     pdf.setFont("helvetica", "normal");
-    pdf.text(String(docData.validUntil), margin, y);
-    y += 10;
+    pdf.text(String(d.validUntil), margin, y);
+    y += 6;
   }
 
   y += 12;
 
-  const rows = (docData.items || []).map((it) => [
+  // Tabla estilo clásico
+  const rows = (d.items || []).map((it) => [
     String(it.desc || ""),
     String(Number(it.qty || 0)),
     fmtMoney(it.price || 0),
@@ -1289,14 +1287,14 @@ function buildPdfDoc() {
       font: "helvetica",
       fontSize: 10,
       cellPadding: 8,
-      lineColor: [228, 228, 228],
+      lineColor: [224, 224, 224],
       lineWidth: 0.5,
-      textColor: [30, 30, 30]
+      textColor: [20, 20, 20]
     },
     headStyles: {
-      fillColor: [255, 255, 255],
-      textColor: [0, 0, 0],
-      lineColor: [228, 228, 228],
+      fillColor: [245, 245, 245],
+      textColor: [20, 20, 20],
+      lineColor: [224, 224, 224],
       lineWidth: 0.5,
       fontStyle: "bold"
     },
@@ -1308,54 +1306,62 @@ function buildPdfDoc() {
     }
   });
 
-  y = pdf.lastAutoTable.finalY + 18;
+  y = pdf.lastAutoTable.finalY + 14;
 
+  // Totales derecha, como el clásico
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(11);
-  pdf.text(`Subtotal: ${fmtMoney(docData.totals?.sub || 0)}`, rightX, y, { align: "right" });
+  pdf.text(`Subtotal: ${fmtMoney(d.totals?.sub || 0)}`, rightX, y, { align: "right" });
   y += 16;
-  pdf.text(`IVU: ${fmtMoney(docData.totals?.tax || 0)}`, rightX, y, { align: "right" });
-  y += 20;
+  pdf.text(`IVU: ${fmtMoney(d.totals?.tax || 0)}`, rightX, y, { align: "right" });
+  y += 18;
   pdf.setFontSize(13);
-  pdf.text(`TOTAL: ${fmtMoney(docData.totals?.grand || 0)}`, rightX, y, { align: "right" });
+  pdf.text(`TOTAL: ${fmtMoney(d.totals?.grand || 0)}`, rightX, y, { align: "right" });
 
-  const buttonX = rightX - 132;
-  const buttonY = y + 14;
-
-  y += 42;
-
-  if (docData.notes) {
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(11);
-    pdf.text("Notas", margin, y);
-    y += 18;
-    pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(10);
-    const noteLines = pdf.splitTextToSize(String(docData.notes), pageW - margin * 2 - 170);
-    pdf.text(noteLines, margin, y);
-    y += noteLines.length * 12 + 18;
-  }
-
-  if (docData.terms) {
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(11);
-    pdf.text("Condiciones", margin, y);
-    y += 18;
-    pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(10);
-    const termLines = pdf.splitTextToSize(String(docData.terms), pageW - margin * 2 - 170);
-    pdf.text(termLines, margin, y);
-    y += termLines.length * 12 + 18;
-  }
-
+  // Pago derecha, mismo lugar clásico, solo botón nuevo
   if (biz.paymentLink) {
+    const btnLabel = biz.paymentLabel || "Pagar factura";
+    const btnW = 132;
+    const btnH = 28;
+    const btnX = rightX - btnW;
+    const btnY = y + 22;
+
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(10);
-    pdf.text("Pagar factura", buttonX, buttonY - 10);
-    drawPdfPaymentButton(pdf, buttonX, buttonY, 132, 28, biz.paymentLabel || "Pagar factura", biz.paymentLink);
+    pdf.text("Pagar factura", btnX, btnY - 8);
+    drawPdfPaymentButton(pdf, btnX, btnY, btnW, btnH, btnLabel, biz.paymentLink);
   }
 
-  const footer = `${biz.name || "Tu Empresa"} · ${docData.type === "FAC" ? "FACTURA" : "COTIZACIÓN"} ${docData.number || ""}`.trim();
+  // Notas y condiciones abajo izquierda, como tu clásico
+  let leftY = y + 70;
+
+  if (d.notes) {
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(11);
+    pdf.text("Notas", margin, leftY);
+    leftY += 18;
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    const noteLines = pdf.splitTextToSize(String(d.notes), 290);
+    pdf.text(noteLines, margin, leftY);
+    leftY += noteLines.length * 12 + 22;
+  }
+
+  if (d.terms) {
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(11);
+    pdf.text("Condiciones", margin, leftY);
+    leftY += 18;
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    const termLines = pdf.splitTextToSize(String(d.terms), 290);
+    pdf.text(termLines, margin, leftY);
+  }
+
+  // Footer
+  const footer = `${biz.name || "Tu Empresa"} · ${d.type === "FAC" ? "FACTURA" : "COTIZACIÓN"} ${d.number || ""}`.trim();
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(8);
   pdf.setTextColor(120, 120, 120);
@@ -1393,7 +1399,7 @@ async function uploadInvoicePdfAndGetUrl() {
   );
 
   state.current.lastPdfUrl = pdfUrl;
-  const idx = state.docs.findIndex((d) => d.id === state.current.id);
+  const idx = state.docs.findIndex((docItem) => docItem.id === state.current.id);
   if (idx >= 0) state.docs[idx].lastPdfUrl = pdfUrl;
   cacheSave();
 
