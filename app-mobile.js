@@ -41,27 +41,49 @@ const storage = getStorage(FB_APP);
 
 const $ = (id) => document.getElementById(id);
 
+const CACHE_KEYS = {
+  docs: "nexus_inv_mobile_cache_docs_v3",
+  customers: "nexus_inv_mobile_cache_customers_v3",
+  cfg: "nexus_inv_mobile_cache_cfg_v3",
+  current: "nexus_inv_mobile_cache_current_v3",
+  activeDocId: "nexus_inv_mobile_cache_activeDocId_v3"
+};
+
+const state = {
+  user: null,
+  view: "invoicing",
+  activeDocId: null,
+  current: null,
+  docs: [],
+  customers: [],
+  cfg: null,
+  previewBlobUrl: null,
+  customerFormOpen: false,
+  editingCustomerId: null,
+  catalogIndex: { catById: new Map(), svcById: new Map() }
+};
+
 function hideSplashScreen() {
   const splash = $("appSplash");
   if (!splash) return;
-
-  setTimeout(() => {
-    splash.classList.add("is-hidden");
-  }, 2200);
+  setTimeout(() => splash.classList.add("is-hidden"), 1200);
 }
 
 const fmtMoney = (n) => {
-  const x = Number(n || 0);
-  return x.toLocaleString("en-US", { style: "currency", currency: "USD" });
+  return Number(n || 0).toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD"
+  });
 };
 
-const toISODate = (d) => {
-  const x = new Date(d);
-  const y = x.getFullYear();
-  const m = String(x.getMonth() + 1).padStart(2, "0");
-  const day = String(x.getDate()).padStart(2, "0");
+function toISODate(value) {
+  const d = value ? new Date(value) : new Date();
+  if (Number.isNaN(d.getTime())) return new Date().toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
-};
+}
 
 function uid(prefix = "id") {
   return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -76,22 +98,17 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
-async function blobToDataUrl(blob) {
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(r.result);
-    r.onerror = rej;
-    r.readAsDataURL(blob);
-  });
+function userBase(uid_) {
+  return `users/${uid_}`;
 }
-
-async function fileToDataUrl(file) {
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(r.result);
-    r.onerror = rej;
-    r.readAsDataURL(file);
-  });
+function colDocs(uid_) {
+  return collection(db, `${userBase(uid_)}/docs`);
+}
+function colCustomers(uid_) {
+  return collection(db, `${userBase(uid_)}/customers`);
+}
+function docSettings(uid_) {
+  return doc(db, `${userBase(uid_)}/settings/main`);
 }
 
 async function fileToImage(file) {
@@ -139,32 +156,6 @@ async function normalizeLogoFileForPdf(file) {
   return canvas.toDataURL("image/png");
 }
 
-function userBase(uid_) {
-  return `users/${uid_}`;
-}
-function colDocs(uid_) {
-  return collection(db, `${userBase(uid_)}/docs`);
-}
-function colCustomers(uid_) {
-  return collection(db, `${userBase(uid_)}/customers`);
-}
-function docSettings(uid_) {
-  return doc(db, `${userBase(uid_)}/settings/main`);
-}
-
-let state = {
-  user: null,
-  view: "home",
-  activeDocId: null,
-  current: null,
-  previewBlobUrl: null,
-  docs: [],
-  customers: [],
-  cfg: null,
-  customerFormOpen: false,
-  catalogIndex: { catById: new Map(), svcById: new Map() }
-};
-
 function defaultCatalog() {
   return {
     categories: [
@@ -174,12 +165,11 @@ function defaultCatalog() {
         services: [
           {
             id: "svc_mant_res",
-            name: "Mantenimiento Preventivo Mini Split",
+            name: "Mantenimiento Preventivo",
             desc: "Servicio preventivo: limpieza, revisión eléctrica, drenajes y prueba operacional.",
             price: 55,
-            notes: "Incluye 1 unidad. Precio sujeto a acceso y condición.",
-            warranty: "Garantía de servicio: 30 días en mano de obra.",
-            terms: "Depósito no reembolsable si aplica y no hay acceso o respuesta."
+            notes: "Precio sujeto a acceso y condición.",
+            terms: "Pago contra entrega."
           }
         ]
       },
@@ -188,12 +178,11 @@ function defaultCatalog() {
         name: "Diagnóstico",
         services: [
           {
-            id: "svc_diag_bas",
+            id: "svc_diag",
             name: "Diagnóstico Técnico",
             desc: "Evaluación técnica y recomendación de reparación.",
             price: 45,
             notes: "Diagnóstico no incluye reparación ni piezas.",
-            warranty: "Garantía aplica solo a reparación realizada.",
             terms: "El diagnóstico se acredita si se aprueba la reparación el mismo día."
           }
         ]
@@ -202,25 +191,11 @@ function defaultCatalog() {
   };
 }
 
-function defaultTemplates() {
-  return {
-    notes: [
-      { id: "nt_std", name: "Nota estándar", text: "Gracias por preferirnos. Trabajo realizado según inspección en sitio." }
-    ],
-    warranties: [
-      { id: "w_30", name: "Garantía 30 días", text: "Garantía de 30 días en mano de obra. No cubre mal uso ni terceros." }
-    ],
-    terms: [
-      { id: "t_std", name: "Términos estándar", text: "Pago contra entrega. IVU aplicado según ley." }
-    ]
-  };
-}
-
 function defaultCfg() {
   return {
     biz: {
       name: "Tu Empresa",
-      phone: "Numero de telefono",
+      phone: "",
       email: "",
       addr: "Puerto Rico",
       paymentLabel: "Pagar ahora",
@@ -229,8 +204,7 @@ function defaultCfg() {
       logoDataUrl: ""
     },
     taxRate: 11.5,
-    catalog: defaultCatalog(),
-    templates: defaultTemplates()
+    catalog: defaultCatalog()
   };
 }
 
@@ -239,14 +213,8 @@ function normalizeCfg(cfg) {
   const merged = { ...base, ...(cfg || {}) };
 
   merged.biz = { ...base.biz, ...(cfg?.biz || {}) };
+  merged.taxRate = Number(cfg?.taxRate ?? base.taxRate);
   merged.catalog = cfg?.catalog?.categories ? cfg.catalog : base.catalog;
-  merged.templates = cfg?.templates
-    ? {
-        notes: Array.isArray(cfg.templates.notes) ? cfg.templates.notes : base.templates.notes,
-        warranties: Array.isArray(cfg.templates.warranties) ? cfg.templates.warranties : base.templates.warranties,
-        terms: Array.isArray(cfg.templates.terms) ? cfg.templates.terms : base.templates.terms
-      }
-    : base.templates;
 
   merged.catalog.categories = (merged.catalog.categories || []).map((c) => ({
     id: String(c.id || uid("cat")),
@@ -257,7 +225,6 @@ function normalizeCfg(cfg) {
       desc: String(s.desc || ""),
       price: Number(s.price || 0),
       notes: String(s.notes || ""),
-      warranty: String(s.warranty || ""),
       terms: String(s.terms || "")
     }))
   }));
@@ -270,14 +237,26 @@ function indexCatalog() {
   state.catalogIndex.svcById = new Map();
 
   const cats = state.cfg?.catalog?.categories || [];
-  cats.forEach((c) => {
-    state.catalogIndex.catById.set(c.id, c);
-    (c.services || []).forEach((s) => state.catalogIndex.svcById.set(s.id, { ...s, _catId: c.id }));
+  cats.forEach((cat) => {
+    state.catalogIndex.catById.set(cat.id, cat);
+    (cat.services || []).forEach((svc) => {
+      state.catalogIndex.svcById.set(svc.id, { ...svc, _catId: cat.id });
+    });
   });
 }
 
-function newDoc(type = "COT") {
-  const cfg = state.cfg || defaultCfg();
+function emptyItem() {
+  return {
+    id: uid("it"),
+    desc: "",
+    qty: 1,
+    price: 0,
+    catId: "",
+    svcId: ""
+  };
+}
+
+function newDoc(type = "FAC") {
   const today = toISODate(new Date());
   const valid = toISODate(new Date(Date.now() + 14 * 24 * 3600 * 1000));
 
@@ -289,14 +268,99 @@ function newDoc(type = "COT") {
     status: "PENDIENTE",
     client: { name: "", contact: "", addr: "" },
     validUntil: valid,
-    items: [{ id: uid("it"), desc: "", qty: 1, price: 0, catId: "", svcId: "" }],
+    items: [emptyItem()],
     notes: "",
     terms: "",
     totals: { sub: 0, tax: 0, grand: 0 },
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    taxRate: Number(cfg.taxRate || 11.5)
+    taxRate: Number(state.cfg?.taxRate ?? 11.5),
+    lastPdfUrl: ""
   };
+}
+
+function normalizeDoc(d) {
+  const type = d?.type === "COT" ? "COT" : "FAC";
+  return {
+    id: String(d?.id || uid("doc")),
+    type,
+    number: String(d?.number || ""),
+    date: String(d?.date || toISODate(new Date())),
+    status: String(d?.status || "PENDIENTE"),
+    client: {
+      name: String(d?.client?.name || ""),
+      contact: String(d?.client?.contact || ""),
+      addr: String(d?.client?.addr || "")
+    },
+    validUntil: String(d?.validUntil || toISODate(new Date(Date.now() + 14 * 24 * 3600 * 1000))),
+    items: Array.isArray(d?.items) && d.items.length
+      ? d.items.map((it) => ({
+          id: String(it?.id || uid("it")),
+          desc: String(it?.desc || ""),
+          qty: Number(it?.qty || 1),
+          price: Number(it?.price || 0),
+          catId: String(it?.catId || ""),
+          svcId: String(it?.svcId || "")
+        }))
+      : [emptyItem()],
+    notes: String(d?.notes || ""),
+    terms: String(d?.terms || ""),
+    totals: {
+      sub: Number(d?.totals?.sub || 0),
+      tax: Number(d?.totals?.tax || 0),
+      grand: Number(d?.totals?.grand || 0)
+    },
+    createdAt: d?.createdAt || new Date().toISOString(),
+    updatedAt: d?.updatedAt || new Date().toISOString(),
+    taxRate: Number(d?.taxRate ?? state.cfg?.taxRate ?? 11.5),
+    lastPdfUrl: String(d?.lastPdfUrl || "")
+  };
+}
+
+function normalizeCustomer(c) {
+  return {
+    id: String(c?.id || uid("cus")),
+    name: String(c?.name || ""),
+    contact: String(c?.contact || ""),
+    addr: String(c?.addr || ""),
+    note: String(c?.note || "")
+  };
+}
+
+function cacheSave() {
+  try {
+    localStorage.setItem(CACHE_KEYS.docs, JSON.stringify(state.docs || []));
+    localStorage.setItem(CACHE_KEYS.customers, JSON.stringify(state.customers || []));
+    localStorage.setItem(CACHE_KEYS.cfg, JSON.stringify(state.cfg || defaultCfg()));
+    localStorage.setItem(CACHE_KEYS.current, JSON.stringify(state.current || newDoc("FAC")));
+    localStorage.setItem(CACHE_KEYS.activeDocId, state.activeDocId || "");
+  } catch (err) {
+    console.warn("Cache local falló:", err);
+  }
+}
+
+function cacheLoad() {
+  try {
+    const docs = JSON.parse(localStorage.getItem(CACHE_KEYS.docs) || "[]");
+    const customers = JSON.parse(localStorage.getItem(CACHE_KEYS.customers) || "[]");
+    const cfg = JSON.parse(localStorage.getItem(CACHE_KEYS.cfg) || "null");
+    const current = JSON.parse(localStorage.getItem(CACHE_KEYS.current) || "null");
+    const activeDocId = localStorage.getItem(CACHE_KEYS.activeDocId) || "";
+
+    state.cfg = normalizeCfg(cfg || defaultCfg());
+    indexCatalog();
+    state.docs = Array.isArray(docs) ? docs.map(normalizeDoc) : [];
+    state.customers = Array.isArray(customers) ? customers.map(normalizeCustomer) : [];
+    state.current = current ? normalizeDoc(current) : newDoc("FAC");
+    state.activeDocId = activeDocId || null;
+  } catch {
+    state.cfg = normalizeCfg(defaultCfg());
+    indexCatalog();
+    state.docs = [];
+    state.customers = [];
+    state.current = newDoc("FAC");
+    state.activeDocId = null;
+  }
 }
 
 function ensureAuthButtons() {
@@ -332,20 +396,6 @@ function refreshAuthUI() {
   const isOn = !!state.user;
   if ($("btnLogin")) $("btnLogin").style.display = isOn ? "none" : "grid";
   if ($("btnLogout")) $("btnLogout").style.display = isOn ? "grid" : "none";
-
-  [
-    "btnSaveDoc",
-    "btnPDF",
-    "btnSMS",
-    "btnConfirmFromPreview",
-    "btnExportHist",
-    "btnClearHist",
-    "btnAddCustomer",
-    "btnExportBackup",
-    "btnRestoreBackup"
-  ].forEach((id) => {
-    if ($(id)) $(id).disabled = !isOn;
-  });
 }
 
 async function login() {
@@ -360,100 +410,38 @@ async function logout() {
 async function loadAllFromFirestore() {
   if (!state.user) return;
 
-  const sref = docSettings(state.user.uid);
-  const snap = await getDoc(sref);
-  state.cfg = snap.exists() ? normalizeCfg(snap.data()) : normalizeCfg(defaultCfg());
-
+  const settingsSnap = await getDoc(docSettings(state.user.uid));
+  state.cfg = settingsSnap.exists() ? normalizeCfg(settingsSnap.data()) : normalizeCfg(defaultCfg());
   indexCatalog();
 
   const qDocs = query(colDocs(state.user.uid), orderBy("updatedAt", "desc"));
   const docsSnap = await getDocs(qDocs);
-  state.docs = docsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  state.docs = docsSnap.docs.map((d) => normalizeDoc({ id: d.id, ...d.data() }));
 
-  const qCus = query(colCustomers(state.user.uid), orderBy("createdAt", "desc"));
-  const cusSnap = await getDocs(qCus);
-  state.customers = cusSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const qCustomers = query(colCustomers(state.user.uid), orderBy("createdAt", "desc"));
+  const customersSnap = await getDocs(qCustomers);
+  state.customers = customersSnap.docs.map((d) => normalizeCustomer({ id: d.id, ...d.data() }));
 
-  refreshKPIs();
-  renderLastTransactions();
-  renderHistory();
-  renderCustomers();
-  renderReporting();
-  syncFormFromState();
-  renderItemsMobile();
+  if (state.activeDocId) {
+    const live = state.docs.find((x) => x.id === state.activeDocId);
+    if (live) state.current = normalizeDoc(live);
+  }
+
+  cacheSave();
+  refreshAllUI();
 }
 
 async function saveSettingsToFirestore() {
   if (!state.user) return;
-  const sref = docSettings(state.user.uid);
-  const safeCfg = JSON.parse(JSON.stringify(normalizeCfg(state.cfg || defaultCfg())));
-
   await setDoc(
-    sref,
+    docSettings(state.user.uid),
     {
-      ...safeCfg,
+      ...JSON.parse(JSON.stringify(normalizeCfg(state.cfg))),
       updatedAt: serverTimestamp()
     },
     { merge: true }
   );
-}
-
-async function buildBackupPayload() {
-  return {
-    exportedAt: new Date().toISOString(),
-    version: "nexus_invoicing_mobile_backup_local_v1",
-    docs: Array.isArray(state.docs) ? state.docs : [],
-    customers: Array.isArray(state.customers) ? state.customers : [],
-    cfg: state.cfg ? JSON.parse(JSON.stringify(state.cfg)) : defaultCfg()
-  };
-}
-
-async function exportBackupFile() {
-  const payload = await buildBackupPayload();
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `nexus_invoicing_mobile_backup_${toISODate(new Date())}.json`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 800);
-}
-
-async function restoreBackupFromFile(file) {
-  if (!state.user) return alert("Login requerido.");
-
-  const txt = await file.text();
-  const parsed = JSON.parse(txt);
-
-  if (!parsed || parsed.version !== "nexus_invoicing_mobile_backup_local_v1") {
-    throw new Error("Archivo de backup inválido.");
-  }
-
-  const docsArr = Array.isArray(parsed.docs) ? parsed.docs : [];
-  const customersArr = Array.isArray(parsed.customers) ? parsed.customers : [];
-  const cfgObj = normalizeCfg(parsed.cfg || defaultCfg());
-
-  state.cfg = cfgObj;
-  await saveSettingsToFirestore();
-
-  for (const c of customersArr) {
-    const cid = c.id || uid("cus");
-    await setDoc(doc(db, `${userBase(state.user.uid)}/customers/${cid}`), {
-      ...c,
-      restoredAt: serverTimestamp()
-    }, { merge: true });
-  }
-
-  for (const d of docsArr) {
-    const did = d.id || uid("doc");
-    await setDoc(doc(db, `${userBase(state.user.uid)}/docs/${did}`), {
-      ...d,
-      restoredAt: serverTimestamp()
-    }, { merge: true });
-  }
-
-  await loadAllFromFirestore();
-  alert("Backup restaurado ✅");
+  cacheSave();
 }
 
 function setView(view) {
@@ -472,32 +460,42 @@ function setView(view) {
   if (view === "invoicing") renderInvoicing();
   if (view === "customers") renderCustomers();
   if (view === "history") renderHistory();
-  if (view === "reporting") renderReporting();
+}
+
+function refreshAllUI() {
+  refreshKPIs();
+  renderLastTransactions();
+  renderHistory();
+  renderCustomers();
+  renderInvoicing();
 }
 
 function syncFormFromState() {
   if (!state.current) return;
 
-  if ($("docType")) $("docType").value = state.current.type;
-  if ($("docNumber")) $("docNumber").value = state.current.number || "";
-  if ($("docDate")) $("docDate").value = state.current.date || toISODate(new Date());
-  if ($("docStatus")) $("docStatus").value = state.current.status || "PENDIENTE";
+  $("docType").value = state.current.type || "FAC";
+  $("docNumber").value = state.current.number || "";
+  $("docDate").value = state.current.date || toISODate(new Date());
+  $("docStatus").value = state.current.status || "PENDIENTE";
 
-  if ($("clientName")) $("clientName").value = state.current.client?.name || "";
-  if ($("clientContact")) $("clientContact").value = state.current.client?.contact || "";
-  if ($("clientAddr")) $("clientAddr").value = state.current.client?.addr || "";
-  if ($("validUntil")) $("validUntil").value = state.current.validUntil || "";
-  if ($("notes")) $("notes").value = state.current.notes || "";
-  if ($("terms")) $("terms").value = state.current.terms || "";
+  $("clientName").value = state.current.client?.name || "";
+  $("clientContact").value = state.current.client?.contact || "";
+  $("clientAddr").value = state.current.client?.addr || "";
+  $("validUntil").value = state.current.validUntil || "";
+  $("notes").value = state.current.notes || "";
+  $("terms").value = state.current.terms || "";
 
-  if ($("docModePill")) $("docModePill").textContent = state.activeDocId ? "Editando" : "Nuevo";
+  $("docModePill").textContent = state.activeDocId ? "Editando" : "Nuevo";
+  renderPaymentPanel();
 }
 
 function readDocHeaderIntoState() {
   if (!state.current) return;
 
-  state.current.type = $("docType")?.value || "COT";
-  state.current.number = ($("docNumber")?.value || "").trim();
+  const oldType = state.current.type || "FAC";
+  const newType = $("docType")?.value || "FAC";
+
+  state.current.type = newType;
   state.current.date = $("docDate")?.value || toISODate(new Date());
   state.current.status = $("docStatus")?.value || "PENDIENTE";
   state.current.client.name = ($("clientName")?.value || "").trim();
@@ -506,6 +504,22 @@ function readDocHeaderIntoState() {
   state.current.validUntil = $("validUntil")?.value || "";
   state.current.notes = ($("notes")?.value || "").trim();
   state.current.terms = ($("terms")?.value || "").trim();
+
+  const manualNumber = ($("docNumber")?.value || "").trim();
+  if (manualNumber) {
+    state.current.number = manualNumber;
+  } else if (oldType !== newType) {
+    state.current.number = "";
+  }
+}
+
+function buildCategoryOptions(selectedCat = "") {
+  const cats = state.cfg?.catalog?.categories || [];
+  let html = `<option value="">Categoría</option>`;
+  cats.forEach((cat) => {
+    html += `<option value="${escapeHtml(cat.id)}" ${cat.id === selectedCat ? "selected" : ""}>${escapeHtml(cat.name)}</option>`;
+  });
+  return html;
 }
 
 function buildServiceOptions(catId = "", selectedSvc = "") {
@@ -514,15 +528,6 @@ function buildServiceOptions(catId = "", selectedSvc = "") {
   let html = `<option value="">Servicio</option>`;
   list.forEach((svc) => {
     html += `<option value="${escapeHtml(svc.id)}" ${svc.id === selectedSvc ? "selected" : ""}>${escapeHtml(svc.name)}</option>`;
-  });
-  return html;
-}
-
-function buildCategoryOptions(selectedCat = "") {
-  const cats = state.cfg?.catalog?.categories || [];
-  let html = `<option value="">Categoría</option>`;
-  cats.forEach((cat) => {
-    html += `<option value="${escapeHtml(cat.id)}" ${cat.id === selectedCat ? "selected" : ""}>${escapeHtml(cat.name)}</option>`;
   });
   return html;
 }
@@ -544,7 +549,6 @@ function renderItemsMobile() {
 
     const card = document.createElement("article");
     card.className = "mobileItemCard";
-    card.dataset.itemId = it.id;
     card.innerHTML = `
       <div class="mobileItemGrid">
         <div class="itemRow2">
@@ -566,11 +570,11 @@ function renderItemsMobile() {
         <div class="itemRow2">
           <div class="field">
             <label>Cantidad</label>
-            <input class="input item-qty" type="number" min="0" step="1" value="${Number(it.qty ?? 1)}" />
+            <input class="input item-qty" type="number" min="0" step="1" value="${Number(it.qty || 1)}" />
           </div>
           <div class="field">
             <label>Precio</label>
-            <input class="input item-price" type="number" inputmode="decimal" min="0" step="0.01" value="${Number(it.price ?? 0)}" />
+            <input class="input item-price" type="number" min="0" step="0.01" value="${Number(it.price || 0)}" />
           </div>
         </div>
 
@@ -600,43 +604,47 @@ function renderItemsMobile() {
       it.svcId = "";
       svcSel.innerHTML = buildServiceOptions(it.catId, "");
       updateTotalsLive();
+      cacheSave();
       refreshRowTotal();
     });
 
     svcSel.addEventListener("change", () => {
       it.svcId = svcSel.value || "";
-      if (!it.svcId) return;
-
       const svc = state.catalogIndex.svcById.get(it.svcId);
-      if (!svc) return;
+      if (!svc) {
+        updateTotalsLive();
+        cacheSave();
+        return;
+      }
 
       it.desc = svc.desc || svc.name || "";
       it.price = Number(svc.price || 0);
-
       descInput.value = it.desc;
       priceInput.value = String(it.price);
 
       if ((!state.current.notes || !state.current.notes.trim()) && svc.notes) {
         state.current.notes = svc.notes;
-        if ($("notes")) $("notes").value = svc.notes;
+        $("notes").value = svc.notes;
       }
-
       if ((!state.current.terms || !state.current.terms.trim()) && svc.terms) {
         state.current.terms = svc.terms;
-        if ($("terms")) $("terms").value = svc.terms;
+        $("terms").value = svc.terms;
       }
 
       updateTotalsLive();
+      cacheSave();
       refreshRowTotal();
     });
 
     descInput.addEventListener("input", () => {
       it.desc = descInput.value;
+      cacheSave();
     });
 
     qtyInput.addEventListener("input", () => {
       it.qty = Number(qtyInput.value || 0);
       updateTotalsLive();
+      cacheSave();
       refreshRowTotal();
     });
 
@@ -644,16 +652,16 @@ function renderItemsMobile() {
       const normalized = String(priceInput.value || "").replace(",", ".");
       it.price = Number(normalized || 0);
       updateTotalsLive();
+      cacheSave();
       refreshRowTotal();
     });
 
     delBtn.addEventListener("click", () => {
       state.current.items = state.current.items.filter((x) => x.id !== it.id);
-      if (!state.current.items.length) {
-        state.current.items.push({ id: uid("it"), desc: "", qty: 1, price: 0, catId: "", svcId: "" });
-      }
+      if (!state.current.items.length) state.current.items.push(emptyItem());
       updateTotalsLive();
       renderItemsMobile();
+      cacheSave();
     });
 
     wrap.appendChild(card);
@@ -663,8 +671,9 @@ function renderItemsMobile() {
 function updateTotalsLive() {
   if (!state.current) return;
 
-  const cfg = state.cfg || defaultCfg();
-  const taxRate = Number(cfg.taxRate ?? state.current.taxRate ?? 11.5);
+  readDocHeaderIntoState();
+
+  const taxRate = Number(state.cfg?.taxRate ?? state.current.taxRate ?? 11.5);
   state.current.taxRate = taxRate;
 
   let sub = 0;
@@ -674,11 +683,29 @@ function updateTotalsLive() {
 
   const tax = sub * (taxRate / 100);
   const grand = sub + tax;
-  state.current.totals = { sub, tax, grand };
 
-  if ($("subTotal")) $("subTotal").textContent = fmtMoney(sub);
-  if ($("taxTotal")) $("taxTotal").textContent = fmtMoney(tax);
-  if ($("grandTotal")) $("grandTotal").textContent = fmtMoney(grand);
+  state.current.totals = { sub, tax, grand };
+  $("subTotal").textContent = fmtMoney(sub);
+  $("taxTotal").textContent = fmtMoney(tax);
+  $("grandTotal").textContent = fmtMoney(grand);
+
+  renderPaymentPanel();
+  cacheSave();
+}
+
+function renderPaymentPanel() {
+  const label = state.cfg?.biz?.paymentLabel || "Pagar ahora";
+  const link = state.cfg?.biz?.paymentLink || "";
+
+  if ($("paymentLabelPreview")) $("paymentLabelPreview").value = label;
+  if ($("paymentLinkPreview")) $("paymentLinkPreview").value = link;
+  if ($("btnOpenPaymentLink")) $("btnOpenPaymentLink").disabled = !link.trim();
+}
+
+function renderInvoicing() {
+  syncFormFromState();
+  renderItemsMobile();
+  updateTotalsLive();
 }
 
 function nextNumber(type) {
@@ -688,56 +715,63 @@ function nextNumber(type) {
   let max = 0;
 
   (state.docs || []).forEach((d) => {
-    const m = (d.number || "").match(re);
+    const m = String(d.number || "").match(re);
     if (m) max = Math.max(max, Number(m[1]));
   });
+
+  if (state.current?.number) {
+    const currentMatch = String(state.current.number).match(re);
+    if (currentMatch) max = Math.max(max, Number(currentMatch[1]));
+  }
 
   return `${prefix}-${year}-${String(max + 1).padStart(4, "0")}`;
 }
 
-async function saveCurrentToHistory({ forceNumber = false } = {}) {
+function ensureStableNumber() {
+  if (!state.current.number || !state.current.number.trim()) {
+    state.current.number = nextNumber(state.current.type || "FAC");
+    $("docNumber").value = state.current.number;
+  }
+}
+
+async function saveCurrentToHistory() {
   if (!state.user) return alert("Necesitas login para guardar.");
 
   readDocHeaderIntoState();
   updateTotalsLive();
-
-  if (forceNumber || !state.current.number) {
-    state.current.number = nextNumber(state.current.type);
-    if ($("docNumber")) $("docNumber").value = state.current.number;
-  }
+  ensureStableNumber();
 
   const nowIso = new Date().toISOString();
   state.current.updatedAt = nowIso;
   if (!state.current.createdAt) state.current.createdAt = nowIso;
 
-  const refDoc = doc(db, `${userBase(state.user.uid)}/docs/${state.current.id}`);
-  const payload = JSON.parse(JSON.stringify(state.current));
+  const payload = JSON.parse(JSON.stringify(normalizeDoc(state.current)));
   payload.updatedAt = serverTimestamp();
   if (!payload._createdAtServer) payload._createdAtServer = serverTimestamp();
 
+  const refDoc = doc(db, `${userBase(state.user.uid)}/docs/${state.current.id}`);
   await setDoc(refDoc, payload, { merge: true });
-  await loadAllFromFirestore();
+
+  const idx = state.docs.findIndex((x) => x.id === state.current.id);
+  if (idx >= 0) state.docs[idx] = normalizeDoc(payload);
+  else state.docs.unshift(normalizeDoc(payload));
+
   state.activeDocId = state.current.id;
+  cacheSave();
+  await loadAllFromFirestore();
 }
 
 async function loadDocFromHistory(id) {
-  const d = (state.docs || []).find((x) => x.id === id);
-  if (!d) return;
+  const found = (state.docs || []).find((x) => x.id === id);
+  if (!found) return;
 
-  state.activeDocId = d.id;
-  state.current = JSON.parse(JSON.stringify(d));
-  state.current.items = (state.current.items || []).map((it) => ({
-    id: it.id || uid("it"),
-    desc: it.desc || "",
-    qty: Number(it.qty || 0) || 1,
-    price: Number(it.price || 0),
-    catId: it.catId || "",
-    svcId: it.svcId || ""
-  }));
+  state.activeDocId = found.id;
+  state.current = normalizeDoc(found);
 
   syncFormFromState();
-  updateTotalsLive();
   renderItemsMobile();
+  updateTotalsLive();
+  cacheSave();
   setView("invoicing");
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -748,18 +782,17 @@ async function deleteDocCloud() {
   if (!confirm("¿Borrar este documento?")) return;
 
   await deleteDoc(doc(db, `${userBase(state.user.uid)}/docs/${state.activeDocId}`));
+  state.docs = state.docs.filter((d) => d.id !== state.activeDocId);
   state.activeDocId = null;
-  state.current = newDoc();
-  syncFormFromState();
-  updateTotalsLive();
-  renderItemsMobile();
-  await loadAllFromFirestore();
+  state.current = newDoc("FAC");
+  cacheSave();
+  refreshAllUI();
 }
 
 function duplicateDoc() {
   readDocHeaderIntoState();
 
-  const copy = JSON.parse(JSON.stringify(state.current));
+  const copy = normalizeDoc(state.current);
   copy.id = uid("doc");
   copy.number = "";
   copy.status = "PENDIENTE";
@@ -767,30 +800,55 @@ function duplicateDoc() {
   copy.updatedAt = new Date().toISOString();
   copy.items = (copy.items || []).map((it) => ({
     ...it,
-    id: uid("it"),
-    catId: it.catId || "",
-    svcId: it.svcId || ""
+    id: uid("it")
   }));
 
   state.activeDocId = null;
   state.current = copy;
-
   syncFormFromState();
-  updateTotalsLive();
   renderItemsMobile();
+  updateTotalsLive();
+  cacheSave();
+}
+
+async function quickMarkPaid(id) {
+  if (!state.user) return alert("Login requerido.");
+  const docItem = state.docs.find((x) => x.id === id);
+  if (!docItem) return;
+  if (docItem.type !== "FAC") return alert("Solo las facturas pueden marcarse como pagadas.");
+
+  docItem.status = "PAGADA";
+  docItem.updatedAt = new Date().toISOString();
+
+  await setDoc(
+    doc(db, `${userBase(state.user.uid)}/docs/${id}`),
+    {
+      status: "PAGADA",
+      updatedAt: serverTimestamp()
+    },
+    { merge: true }
+  );
+
+  if (state.activeDocId === id && state.current) {
+    state.current.status = "PAGADA";
+    syncFormFromState();
+  }
+
+  cacheSave();
+  await loadAllFromFirestore();
 }
 
 function renderHistory() {
   const body = $("histBody");
   if (!body) return;
 
-  const q = (($("histSearch")?.value || "").trim().toLowerCase());
+  const q = ($("histSearch")?.value || "").trim().toLowerCase();
   body.innerHTML = "";
 
   let rows = [...(state.docs || [])];
   if (q) {
     rows = rows.filter((d) => {
-      const s = `${d.number || ""} ${d.client?.name || ""}`.toLowerCase();
+      const s = `${d.number || ""} ${d.client?.name || ""} ${d.type || ""}`.toLowerCase();
       return s.includes(q);
     });
   }
@@ -801,6 +859,7 @@ function renderHistory() {
   }
 
   rows.forEach((d) => {
+    const isInvoice = d.type === "FAC";
     const card = document.createElement("article");
     card.className = "listCard";
     card.innerHTML = `
@@ -815,7 +874,7 @@ function renderHistory() {
       <div class="listMeta">
         <div class="metaBlock">
           <div class="metaLabel">Tipo</div>
-          <div class="metaValue">${d.type === "FAC" ? "Factura" : "Cotización"}</div>
+          <div class="metaValue">${isInvoice ? "Factura" : "Cotización"}</div>
         </div>
         <div class="metaBlock">
           <div class="metaLabel">Fecha</div>
@@ -833,11 +892,16 @@ function renderHistory() {
 
       <div class="cardActions">
         <button class="btn smallBtn hist-open" type="button">Abrir</button>
+        ${isInvoice && d.status !== "PAGADA" ? `<button class="btn smallBtn hist-paid" type="button">Marcar pagada</button>` : ""}
         <button class="btn smallBtn primary hist-pdf" type="button">PDF</button>
       </div>
     `;
 
     card.querySelector(".hist-open").onclick = () => loadDocFromHistory(d.id);
+
+    const paidBtn = card.querySelector(".hist-paid");
+    if (paidBtn) paidBtn.onclick = () => quickMarkPaid(d.id);
+
     card.querySelector(".hist-pdf").onclick = async () => {
       await loadDocFromHistory(d.id);
       await confirmPDF();
@@ -849,30 +913,14 @@ function renderHistory() {
 
 function refreshKPIs() {
   const docs = state.docs || [];
-  const pendingDocs = docs.filter((d) => d.status !== "PAGADA").length;
+  const pendingDocs = docs.filter((d) => d.type === "FAC" && d.status !== "PAGADA").length;
   const totalFacturado = docs
     .filter((d) => d.type === "FAC")
     .reduce((acc, d) => acc + Number(d.totals?.grand || 0), 0);
 
-  if ($("kpiDocs")) $("kpiDocs").textContent = String(docs.length);
-  if ($("kpiPendingDocs")) $("kpiPendingDocs").textContent = String(pendingDocs);
-  if ($("kpiLastTotal")) $("kpiLastTotal").textContent = fmtMoney(totalFacturado);
-}
-
-function renderReporting() {
-  const docs = state.docs || [];
-  let pending = 0;
-  let paid = 0;
-
-  docs.forEach((d) => {
-    const val = Number(d.totals?.grand || 0);
-    if (d.status === "PAGADA") paid += val;
-    else pending += val;
-  });
-
-  if ($("repPending")) $("repPending").textContent = fmtMoney(pending);
-  if ($("repPaid")) $("repPaid").textContent = fmtMoney(paid);
-  if ($("repDocs")) $("repDocs").textContent = String(docs.length);
+  $("kpiDocs").textContent = String(docs.length);
+  $("kpiPendingDocs").textContent = String(pendingDocs);
+  $("kpiLastTotal").textContent = fmtMoney(totalFacturado);
 }
 
 function renderLastTransactions() {
@@ -880,17 +928,10 @@ function renderLastTransactions() {
   if (!wrap) return;
 
   wrap.innerHTML = "";
-
-  const rows = [...(state.docs || [])]
-    .sort((a, b) => {
-      const av = a?.updatedAt?.seconds ? Number(a.updatedAt.seconds) : new Date(a.updatedAt || a.date || 0).getTime();
-      const bv = b?.updatedAt?.seconds ? Number(b.updatedAt.seconds) : new Date(b.updatedAt || b.date || 0).getTime();
-      return bv - av;
-    })
-    .slice(0, 5);
+  const rows = [...(state.docs || [])].slice(0, 5);
 
   if (!rows.length) {
-    wrap.innerHTML = `<div class="listCard"><div class="listTitle">Sin transacciones</div><div class="listSub">Todavía no hay movimiento.</div></div>`;
+    wrap.innerHTML = `<div class="listCard"><div class="listTitle">Sin actividad</div><div class="listSub">Aún no hay documentos guardados.</div></div>`;
     return;
   }
 
@@ -900,24 +941,24 @@ function renderLastTransactions() {
     card.innerHTML = `
       <div class="listCardTop">
         <div>
-          <div class="listTitle">${escapeHtml(d.client?.name || d.number || "Documento")}</div>
-          <div class="listSub">${escapeHtml(d.date || "—")} · ${d.type === "FAC" ? "Factura" : "Cotización"}</div>
+          <div class="listTitle">${escapeHtml(d.number || "AUTO")}</div>
+          <div class="listSub">${escapeHtml(d.client?.name || "Sin cliente")}</div>
         </div>
-        <div class="listTitle">${fmtMoney(d.totals?.grand || 0)}</div>
+        <span class="badge ${d.status === "PAGADA" ? "ok" : "warn"}">${escapeHtml(d.status || "PENDIENTE")}</span>
+      </div>
+      <div class="listMeta">
+        <div class="metaBlock">
+          <div class="metaLabel">Tipo</div>
+          <div class="metaValue">${d.type === "FAC" ? "Factura" : "Cotización"}</div>
+        </div>
+        <div class="metaBlock">
+          <div class="metaLabel">Total</div>
+          <div class="metaValue">${fmtMoney(d.totals?.grand || 0)}</div>
+        </div>
       </div>
     `;
     wrap.appendChild(card);
   });
-}
-
-function toggleCustomerForm(force = null) {
-  const card = $("customerFormCard");
-  const btn = $("btnToggleCustomerForm");
-  if (!card || !btn) return;
-
-  state.customerFormOpen = force === null ? !state.customerFormOpen : !!force;
-  card.classList.toggle("is-hidden", !state.customerFormOpen);
-  btn.textContent = state.customerFormOpen ? "Ocultar" : "Nuevo cliente";
 }
 
 function updateCustomerSearchClear() {
@@ -927,15 +968,43 @@ function updateCustomerSearchClear() {
   btn.classList.toggle("show", !!input.value.trim());
 }
 
+function fillCustomerForm(customer = null) {
+  $("cName").value = customer?.name || "";
+  $("cContact").value = customer?.contact || "";
+  $("cAddr").value = customer?.addr || "";
+  $("cNote").value = customer?.note || "";
+}
+
+function toggleCustomerForm(force = null, customer = null) {
+  const card = $("customerFormCard");
+  const btn = $("btnToggleCustomerForm");
+  if (!card || !btn) return;
+
+  state.customerFormOpen = force === null ? !state.customerFormOpen : !!force;
+  state.editingCustomerId = customer?.id || null;
+
+  card.classList.toggle("is-hidden", !state.customerFormOpen);
+  btn.textContent = state.customerFormOpen ? "Ocultar" : "Nuevo cliente";
+
+  const titleNode = card.querySelector(".sectionMiniTitle");
+  if (titleNode) titleNode.textContent = state.editingCustomerId ? "Editar cliente" : "Nuevo cliente";
+
+  if (state.customerFormOpen) {
+    fillCustomerForm(customer);
+  } else {
+    state.editingCustomerId = null;
+    fillCustomerForm(null);
+  }
+}
+
 function renderCustomers() {
   const wrap = $("customersBody");
   if (!wrap) return;
 
-  updateCustomerSearchClear();
+  wrap.innerHTML = "";
+  const q = ($("cSearch")?.value || "").trim().toLowerCase();
 
-  const q = (($("cSearch")?.value || "").trim().toLowerCase());
   let rows = [...(state.customers || [])];
-
   if (q) {
     rows = rows.filter((c) => {
       const s = `${c.name || ""} ${c.contact || ""} ${c.addr || ""}`.toLowerCase();
@@ -943,10 +1012,8 @@ function renderCustomers() {
     });
   }
 
-  wrap.innerHTML = "";
-
   if (!rows.length) {
-    wrap.innerHTML = `<div class="listCard"><div class="listTitle">Sin clientes</div><div class="listSub">No hay registros todavía.</div></div>`;
+    wrap.innerHTML = `<div class="listCard"><div class="listTitle">Sin clientes</div><div class="listSub">No tienes clientes guardados todavía.</div></div>`;
     return;
   }
 
@@ -956,8 +1023,8 @@ function renderCustomers() {
     card.innerHTML = `
       <div class="listCardTop">
         <div>
-          <div class="listTitle">${escapeHtml(c.name || "")}</div>
-          <div class="listSub">${escapeHtml(c.contact || "")}</div>
+          <div class="listTitle">${escapeHtml(c.name || "Cliente")}</div>
+          <div class="listSub">${escapeHtml(c.contact || "—")}</div>
         </div>
       </div>
 
@@ -974,6 +1041,7 @@ function renderCustomers() {
 
       <div class="cardActions">
         <button class="btn smallBtn use-customer" type="button">Usar</button>
+        <button class="btn smallBtn edit-customer" type="button">Editar</button>
         <button class="btn smallBtn danger del-customer" type="button">Borrar</button>
       </div>
     `;
@@ -983,7 +1051,13 @@ function renderCustomers() {
       state.current.client.contact = c.contact || "";
       state.current.client.addr = c.addr || "";
       syncFormFromState();
+      cacheSave();
       setView("invoicing");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    };
+
+    card.querySelector(".edit-customer").onclick = () => {
+      toggleCustomerForm(true, c);
       window.scrollTo({ top: 0, behavior: "smooth" });
     };
 
@@ -991,6 +1065,8 @@ function renderCustomers() {
       if (!state.user) return alert("Login requerido.");
       if (!confirm("¿Borrar cliente?")) return;
       await deleteDoc(doc(db, `${userBase(state.user.uid)}/customers/${c.id}`));
+      state.customers = state.customers.filter((x) => x.id !== c.id);
+      cacheSave();
       await loadAllFromFirestore();
     };
 
@@ -998,282 +1074,325 @@ function renderCustomers() {
   });
 }
 
-async function addCustomer() {
+async function saveCustomer() {
   if (!state.user) return alert("Login requerido.");
 
   const name = ($("cName")?.value || "").trim();
   if (!name) return alert("Nombre requerido.");
 
-  const id = uid("cus");
-  const refC = doc(db, `${userBase(state.user.uid)}/customers/${id}`);
-
-  await setDoc(refC, {
+  const payload = {
     name,
     contact: ($("cContact")?.value || "").trim(),
     addr: ($("cAddr")?.value || "").trim(),
     note: ($("cNote")?.value || "").trim(),
-    createdAt: serverTimestamp()
-  });
+    updatedAt: serverTimestamp()
+  };
 
-  if ($("cName")) $("cName").value = "";
-  if ($("cContact")) $("cContact").value = "";
-  if ($("cAddr")) $("cAddr").value = "";
-  if ($("cNote")) $("cNote").value = "";
+  if (state.editingCustomerId) {
+    await setDoc(
+      doc(db, `${userBase(state.user.uid)}/customers/${state.editingCustomerId}`),
+      payload,
+      { merge: true }
+    );
+  } else {
+    const id = uid("cus");
+    await setDoc(
+      doc(db, `${userBase(state.user.uid)}/customers/${id}`),
+      {
+        ...payload,
+        createdAt: serverTimestamp()
+      },
+      { merge: true }
+    );
+  }
 
+  fillCustomerForm(null);
   toggleCustomerForm(false);
   await loadAllFromFirestore();
 }
 
 function openBiz() {
   const cfg = state.cfg || defaultCfg();
-  if ($("bizName")) $("bizName").value = cfg.biz?.name || "";
-  if ($("bizPhone")) $("bizPhone").value = cfg.biz?.phone || "";
-  if ($("bizEmail")) $("bizEmail").value = cfg.biz?.email || "";
-  if ($("bizAddr")) $("bizAddr").value = cfg.biz?.addr || "";
-  if ($("bizPaymentLabel")) $("bizPaymentLabel").value = cfg.biz?.paymentLabel || "Pagar ahora";
-  if ($("bizPaymentLink")) $("bizPaymentLink").value = cfg.biz?.paymentLink || "";
-  if ($("taxRate")) $("taxRate").value = String(cfg.taxRate ?? 11.5);
-  if ($("settingsPanel")) $("settingsPanel").style.display = "flex";
+  $("bizName").value = cfg.biz?.name || "";
+  $("bizPhone").value = cfg.biz?.phone || "";
+  $("bizEmail").value = cfg.biz?.email || "";
+  $("bizAddr").value = cfg.biz?.addr || "";
+  $("bizPaymentLabel").value = cfg.biz?.paymentLabel || "Pagar ahora";
+  $("bizPaymentLink").value = cfg.biz?.paymentLink || "";
+  $("taxRate").value = String(cfg.taxRate ?? 11.5);
+  $("settingsPanel").style.display = "flex";
 }
 
 function closeBiz() {
-  if ($("settingsPanel")) $("settingsPanel").style.display = "none";
+  $("settingsPanel").style.display = "none";
 }
 
 async function saveBiz() {
   if (!state.user) return alert("Login requerido.");
 
-  const cfg = state.cfg || defaultCfg();
-  cfg.biz = cfg.biz || {};
-
+  const cfg = normalizeCfg(state.cfg || defaultCfg());
   cfg.biz.name = ($("bizName")?.value || "").trim();
   cfg.biz.phone = ($("bizPhone")?.value || "").trim();
   cfg.biz.email = ($("bizEmail")?.value || "").trim();
   cfg.biz.addr = ($("bizAddr")?.value || "").trim();
-  cfg.biz.paymentLabel = ($("bizPaymentLabel")?.value || "Pagar ahora").trim();
+  cfg.biz.paymentLabel = ($("bizPaymentLabel")?.value || "").trim() || "Pagar ahora";
   cfg.biz.paymentLink = ($("bizPaymentLink")?.value || "").trim();
   cfg.taxRate = Number($("taxRate")?.value || 11.5);
 
-  const file = $("bizLogo")?.files?.[0];
-
-  if (file) {
-    try {
-      const path = `users/${state.user.uid}/logo_${Date.now()}_${file.name}`;
-      const storageRef = ref(storage, path);
-
-      await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(storageRef);
-      const logoDataUrl = await normalizeLogoFileForPdf(file);
-
-      cfg.biz.logoUrl = downloadURL;
-      cfg.biz.logoDataUrl = logoDataUrl;
-    } catch (err) {
-      console.error("Error procesando logo:", err);
-      alert("No se pudo guardar el logo.");
-      return;
-    }
+  const logoFile = $("bizLogo")?.files?.[0];
+  if (logoFile) {
+    const storagePath = `users/${state.user.uid}/branding/logo_${Date.now()}_${logoFile.name}`;
+    const storageRef = ref(storage, storagePath);
+    await uploadBytes(storageRef, logoFile);
+    cfg.biz.logoUrl = await getDownloadURL(storageRef);
+    cfg.biz.logoDataUrl = await normalizeLogoFileForPdf(logoFile);
   }
 
-  state.cfg = normalizeCfg(cfg);
+  state.cfg = cfg;
+  indexCatalog();
+  await saveSettingsToFirestore();
 
-  try {
-    await saveSettingsToFirestore();
-    indexCatalog();
-    refreshKPIs();
+  if (state.current) {
+    state.current.taxRate = Number(cfg.taxRate || 11.5);
     updateTotalsLive();
-    alert("Empresa guardada ✅");
-    closeBiz();
-  } catch (err) {
-    console.error("Error guardando empresa:", err);
-    alert("No se pudo guardar la empresa.");
   }
+
+  closeBiz();
+  cacheSave();
+  refreshAllUI();
 }
 
-function renderInvoicing() {
-  if (!state.current) state.current = newDoc();
-  syncFormFromState();
-  renderItemsMobile();
-  updateTotalsLive();
+async function buildBackupPayload() {
+  return {
+    exportedAt: new Date().toISOString(),
+    version: "nexus_invoicing_mobile_backup_local_v3",
+    docs: state.docs || [],
+    customers: state.customers || [],
+    cfg: state.cfg || defaultCfg()
+  };
+}
+
+async function exportBackupFile() {
+  const payload = await buildBackupPayload();
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `nexus_invoicing_mobile_backup_${toISODate(new Date())}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 800);
+}
+
+async function restoreBackupFromFile(file) {
+  if (!state.user) return alert("Login requerido.");
+
+  const txt = await file.text();
+  const parsed = JSON.parse(txt);
+
+  if (!parsed || !Array.isArray(parsed.docs) || !Array.isArray(parsed.customers)) {
+    throw new Error("Archivo de backup inválido.");
+  }
+
+  state.cfg = normalizeCfg(parsed.cfg || defaultCfg());
+  await saveSettingsToFirestore();
+
+  for (const c of parsed.customers) {
+    const cid = c.id || uid("cus");
+    await setDoc(
+      doc(db, `${userBase(state.user.uid)}/customers/${cid}`),
+      {
+        ...normalizeCustomer({ ...c, id: cid }),
+        restoredAt: serverTimestamp()
+      },
+      { merge: true }
+    );
+  }
+
+  for (const d of parsed.docs) {
+    const did = d.id || uid("doc");
+    await setDoc(
+      doc(db, `${userBase(state.user.uid)}/docs/${did}`),
+      {
+        ...normalizeDoc({ ...d, id: did }),
+        restoredAt: serverTimestamp()
+      },
+      { merge: true }
+    );
+  }
+
+  await loadAllFromFirestore();
+  alert("Backup restaurado ✅");
 }
 
 function buildPdfDoc() {
-  const { jsPDF } = window.jspdf;
-  const cfg = state.cfg || defaultCfg();
-  const biz = cfg.biz || {};
-  const taxRate = Number(cfg.taxRate || 11.5);
-
   readDocHeaderIntoState();
   updateTotalsLive();
 
-  const docp = new jsPDF({ unit: "pt", format: "a4" });
-  const W = docp.internal.pageSize.getWidth();
-  const H = docp.internal.pageSize.getHeight();
-  const margin = 42;
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF("p", "pt", "letter");
+  const cfg = state.cfg || defaultCfg();
+  const biz = cfg.biz || {};
+  const docData = state.current;
 
-  docp.setDrawColor(220);
-  docp.setLineWidth(1);
-  docp.line(margin, 110, W - margin, 110);
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const margin = 40;
+  let y = 42;
 
-  docp.setFont("helvetica", "bold");
-  docp.setFontSize(20);
-  docp.text(state.current.type === "FAC" ? "FACTURA" : "COTIZACIÓN", margin, 64);
-
-  docp.setFont("helvetica", "normal");
-  docp.setFontSize(10);
-  docp.text(`No.: ${state.current.number || "AUTO"}`, margin, 86);
-  docp.text(`Fecha: ${state.current.date || ""}`, margin, 102);
-
-  const rightX = W - margin;
-  let textTopY = 52;
-
-  if (biz.logoDataUrl && String(biz.logoDataUrl).startsWith("data:image/")) {
+  if (biz.logoDataUrl) {
     try {
-      const imgW = 80;
-      const imgH = 80;
-      const imgX = W - margin - imgW;
-      const imgY = 18;
-      const format = biz.logoDataUrl.startsWith("data:image/png") ? "PNG" : "JPEG";
+      pdf.addImage(biz.logoDataUrl, "PNG", margin, y - 4, 58, 58);
+    } catch {}
+  }
 
-      docp.addImage(biz.logoDataUrl, format, imgX, imgY, imgW, imgH);
-      textTopY = imgY + imgH + 6;
-    } catch (err) {
-      console.error("Error renderizando logo en PDF:", err);
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(18);
+  pdf.text(String(biz.name || "Tu Empresa"), biz.logoDataUrl ? 108 : margin, y + 14);
+
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(10);
+  const bizLines = [
+    biz.phone || "",
+    biz.email || "",
+    biz.addr || ""
+  ].filter(Boolean);
+  bizLines.forEach((line, i) => {
+    pdf.text(String(line), biz.logoDataUrl ? 108 : margin, y + 34 + i * 14);
+  });
+
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(18);
+  pdf.text(docData.type === "FAC" ? "FACTURA" : "COTIZACIÓN", pageW - margin, y + 16, { align: "right" });
+
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(10);
+  pdf.text(`Número: ${docData.number || "AUTO"}`, pageW - margin, y + 36, { align: "right" });
+  pdf.text(`Fecha: ${docData.date || "—"}`, pageW - margin, y + 50, { align: "right" });
+  pdf.text(`Estado: ${docData.status || "PENDIENTE"}`, pageW - margin, y + 64, { align: "right" });
+
+  y = 126;
+
+  pdf.setDrawColor(226, 226, 234);
+  pdf.line(margin, y, pageW - margin, y);
+  y += 18;
+
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(11);
+  pdf.text("CLIENTE", margin, y);
+  y += 16;
+
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(10);
+  const clientLines = [
+    docData.client?.name || "",
+    docData.client?.contact || "",
+    docData.client?.addr || "",
+    docData.type === "COT" && docData.validUntil ? `Válida hasta: ${docData.validUntil}` : ""
+  ].filter(Boolean);
+
+  clientLines.forEach((line) => {
+    pdf.text(String(line), margin, y);
+    y += 14;
+  });
+
+  y += 10;
+
+  const rows = (docData.items || []).map((it) => [
+    String(it.desc || "Item"),
+    String(Number(it.qty || 0)),
+    fmtMoney(it.price || 0),
+    fmtMoney(Number(it.qty || 0) * Number(it.price || 0))
+  ]);
+
+  pdf.autoTable({
+    startY: y,
+    head: [["Descripción", "Cant.", "Precio", "Total"]],
+    body: rows,
+    margin: { left: margin, right: margin },
+    styles: {
+      font: "helvetica",
+      fontSize: 10,
+      cellPadding: 8
+    },
+    headStyles: {
+      fillColor: [225, 0, 168]
+    },
+    theme: "grid"
+  });
+
+  y = pdf.lastAutoTable.finalY + 20;
+
+  const rightX = pageW - margin;
+
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(11);
+  pdf.text(`Subtotal: ${fmtMoney(docData.totals?.sub || 0)}`, rightX, y, { align: "right" });
+  y += 16;
+  pdf.text(`IVU: ${fmtMoney(docData.totals?.tax || 0)}`, rightX, y, { align: "right" });
+  y += 18;
+  pdf.setFontSize(13);
+  pdf.text(`Total: ${fmtMoney(docData.totals?.grand || 0)}`, rightX, y, { align: "right" });
+
+  y += 28;
+
+  if (docData.notes) {
+    pdf.setFontSize(11);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("NOTAS", margin, y);
+    y += 16;
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    const noteLines = pdf.splitTextToSize(String(docData.notes), pageW - margin * 2);
+    pdf.text(noteLines, margin, y);
+    y += noteLines.length * 12 + 18;
+  }
+
+  if (docData.terms) {
+    pdf.setFontSize(11);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("CONDICIONES", margin, y);
+    y += 16;
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    const termLines = pdf.splitTextToSize(String(docData.terms), pageW - margin * 2);
+    pdf.text(termLines, margin, y);
+    y += termLines.length * 12 + 18;
+  }
+
+  if (biz.paymentLink) {
+    if (y > pageH - 100) {
+      pdf.addPage();
+      y = 60;
+    }
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(11);
+    pdf.text("PAGO", margin, y);
+    y += 16;
+
+    const payLabel = biz.paymentLabel || "Pagar ahora";
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    pdf.text(`Acceso de pago: ${payLabel}`, margin, y);
+    y += 16;
+
+    try {
+      pdf.setTextColor(0, 102, 204);
+      pdf.textWithLink(payLabel, margin, y, { url: biz.paymentLink });
+      y += 14;
+      pdf.textWithLink(biz.paymentLink, margin, y, { url: biz.paymentLink });
+      pdf.setTextColor(0, 0, 0);
+    } catch {
+      pdf.setTextColor(0, 102, 204);
+      pdf.text(payLabel, margin, y);
+      y += 14;
+      const linkLines = pdf.splitTextToSize(String(biz.paymentLink), pageW - margin * 2);
+      pdf.text(linkLines, margin, y);
+      pdf.setTextColor(0, 0, 0);
     }
   }
 
-  let topY = textTopY;
-  docp.setFont("helvetica", "bold");
-  docp.setFontSize(12);
-  docp.text(biz.name || "Empresa", rightX, topY, { align: "right" });
-
-  docp.setFont("helvetica", "normal");
-  docp.setFontSize(10);
-  topY += 14;
-  if (biz.addr) {
-    docp.text(biz.addr, rightX, topY, { align: "right" });
-    topY += 12;
-  }
-  if (biz.phone) {
-    docp.text(`Tel: ${biz.phone}`, rightX, topY, { align: "right" });
-    topY += 12;
-  }
-  if (biz.email) {
-    docp.text(`Email: ${biz.email}`, rightX, topY, { align: "right" });
-    topY += 12;
-  }
-
-  const boxY = 132;
-  docp.setFillColor(245, 245, 245);
-  docp.setDrawColor(230);
-  docp.roundedRect(margin, boxY, W - 2 * margin, 74, 10, 10, "FD");
-
-  docp.setTextColor(20);
-  docp.setFont("helvetica", "bold");
-  docp.setFontSize(10);
-  docp.text("Cliente", margin + 14, boxY + 22);
-
-  docp.setFont("helvetica", "normal");
-  docp.text(state.current.client.name || "—", margin + 14, boxY + 38);
-  docp.text(state.current.client.contact || "—", margin + 14, boxY + 52);
-  docp.text(state.current.client.addr || "—", margin + 14, boxY + 66);
-
-  docp.setFont("helvetica", "bold");
-  docp.text("Válida hasta", W - margin - 160, boxY + 22);
-  docp.setFont("helvetica", "normal");
-  docp.text(state.current.validUntil || "—", W - margin - 160, boxY + 40);
-
-  const items = (state.current.items || []).map((it) => {
-    const qty = Number(it.qty || 0);
-    const price = Number(it.price || 0);
-    return [it.desc || "", String(qty), fmtMoney(price), fmtMoney(qty * price)];
-  });
-
-  docp.autoTable({
-    startY: boxY + 92,
-    head: [["Descripción", "Cant.", "Precio", "Total"]],
-    body: items,
-    styles: { font: "helvetica", fontSize: 10, cellPadding: 8 },
-    headStyles: { fillColor: [20, 20, 20], textColor: [255, 255, 255] },
-    columnStyles: {
-      0: { cellWidth: 280 },
-      1: { halign: "right", cellWidth: 70 },
-      2: { halign: "right", cellWidth: 90 },
-      3: { halign: "right", cellWidth: 90 }
-    },
-    margin: { left: margin, right: margin }
-  });
-
-  const afterTableY = docp.lastAutoTable.finalY + 14;
-  const totW = 220;
-  const totX = W - margin - totW;
-  const totY = afterTableY;
-
-  docp.setFillColor(245, 245, 245);
-  docp.setDrawColor(230);
-  docp.roundedRect(totX, totY, totW, 74, 10, 10, "FD");
-
-  docp.setFont("helvetica", "normal");
-  docp.setFontSize(10);
-  docp.text("Subtotal:", totX + 12, totY + 22);
-  docp.text(fmtMoney(state.current.totals.sub), totX + totW - 12, totY + 22, { align: "right" });
-
-  docp.text(`IVU (${taxRate.toFixed(2)}%):`, totX + 12, totY + 40);
-  docp.text(fmtMoney(state.current.totals.tax), totX + totW - 12, totY + 40, { align: "right" });
-
-  docp.setFont("helvetica", "bold");
-  docp.text("TOTAL:", totX + 12, totY + 60);
-  docp.text(fmtMoney(state.current.totals.grand), totX + totW - 12, totY + 60, { align: "right" });
-
-  const paymentLabel = biz.paymentLabel || "Pagar ahora";
-  const paymentLink = String(biz.paymentLink || "").trim();
-
-  if (paymentLink) {
-    const payBoxY = totY + 86;
-    const payBoxH = 60;
-    const btnX = totX + 12;
-    const btnY = payBoxY + 12;
-    const btnW = totW - 24;
-    const btnH = 36;
-
-    docp.setFillColor(245, 245, 245);
-    docp.setDrawColor(230);
-    docp.roundedRect(totX, payBoxY, totW, payBoxH, 10, 10, "FD");
-
-    docp.setFillColor(225, 0, 168);
-    docp.setDrawColor(225, 0, 168);
-    docp.roundedRect(btnX, btnY, btnW, btnH, 10, 10, "FD");
-
-    docp.setFont("helvetica", "bold");
-    docp.setFontSize(11);
-    docp.setTextColor(255, 255, 255);
-    docp.text(paymentLabel, btnX + btnW / 2, btnY + 23, { align: "center" });
-
-    docp.link(btnX, btnY, btnW, btnH, { url: paymentLink });
-    docp.setTextColor(20);
-  }
-
-  let textY = totY + (paymentLink ? 164 : 98);
-  docp.setFont("helvetica", "bold");
-  docp.setTextColor(20);
-  docp.text("Notas", margin, textY);
-  docp.setFont("helvetica", "normal");
-  docp.text((state.current.notes || "—").slice(0, 650), margin, textY + 14, { maxWidth: W - 2 * margin });
-
-  textY += 70;
-  docp.setFont("helvetica", "bold");
-  docp.text("Condiciones", margin, textY);
-  docp.setFont("helvetica", "normal");
-  docp.text((state.current.terms || "—").slice(0, 650), margin, textY + 14, { maxWidth: W - 2 * margin });
-
-  docp.setFontSize(9);
-  docp.setTextColor(120);
-  docp.text(
-    `${biz.name || "Empresa"} · ${state.current.type === "FAC" ? "FACTURA" : "COTIZACIÓN"} ${state.current.number || ""}`,
-    margin,
-    H - 26
-  );
-
-  return docp;
+  return pdf;
 }
 
 function makePreview() {
@@ -1282,24 +1401,39 @@ function makePreview() {
     const blob = pdf.output("blob");
     if (state.previewBlobUrl) URL.revokeObjectURL(state.previewBlobUrl);
     state.previewBlobUrl = URL.createObjectURL(blob);
-    if ($("pdfFrame")) $("pdfFrame").src = state.previewBlobUrl;
+    $("pdfFrame").src = state.previewBlobUrl;
     setView("preview");
-  } catch {
+  } catch (err) {
+    console.error(err);
     alert("No se pudo generar preview.");
   }
 }
 
 async function confirmPDF() {
-  await saveCurrentToHistory({ forceNumber: true });
+  if (!state.user) return alert("Login requerido.");
+
+  await saveCurrentToHistory();
 
   try {
     const pdf = buildPdfDoc();
-    const file = `${state.current.type}_${state.current.number || "AUTO"}.pdf`;
-    pdf.save(file);
+    const blob = pdf.output("blob");
+    const safeName = `${state.current.type}_${state.current.number || "AUTO"}.pdf`;
+    const file = new File([blob], safeName, { type: "application/pdf" });
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({
+        files: [file],
+        title: safeName,
+        text: `${state.current.type === "FAC" ? "Factura" : "Cotización"} ${state.current.number || ""}`.trim()
+      });
+    } else {
+      pdf.save(safeName);
+    }
+
     makePreview();
   } catch (err) {
     console.error("PDF falló:", err);
-    alert("PDF falló.");
+    alert("No se pudo generar o compartir el PDF.");
   }
 }
 
@@ -1308,10 +1442,9 @@ function extractPhoneFromContact(raw) {
   if (!txt) return "";
 
   const parts = txt.split(/[,\s/|]+/).filter(Boolean);
-  const candidate = parts.find((p) => /[\d]/.test(p)) || txt;
+  const candidate = parts.find((p) => /\d/.test(p)) || txt;
 
   let cleaned = candidate.replace(/[^\d+]/g, "");
-
   if (cleaned.startsWith("+")) {
     cleaned = `+${cleaned.slice(1).replace(/[^\d]/g, "")}`;
   } else {
@@ -1321,72 +1454,30 @@ function extractPhoneFromContact(raw) {
   return cleaned;
 }
 
-async function uploadInvoicePdfAndGetUrl() {
-  if (!state.user) throw new Error("Login requerido.");
-
+async function sendInvoiceBySMS() {
   readDocHeaderIntoState();
   updateTotalsLive();
 
-  if (!state.current.number) {
-    await saveCurrentToHistory({ forceNumber: true });
-  }
+  const phone = extractPhoneFromContact(state.current.client?.contact || "");
+  if (!phone) return alert("El contacto del cliente no tiene un número válido.");
 
-  const pdf = buildPdfDoc();
-  const pdfBlob = pdf.output("blob");
-  const fileName = `${state.current.type}_${state.current.number}.pdf`;
-  const path = `users/${state.user.uid}/sent-pdfs/${fileName}`;
-  const storageRef = ref(storage, path);
+  const label = state.current.type === "FAC" ? "factura" : "cotización";
+  const message =
+    `Hola ${state.current.client?.name || ""}, te compartimos tu ${label} ${state.current.number || ""} ` +
+    `por ${fmtMoney(state.current.totals?.grand || 0)}.`.trim();
 
-  await uploadBytes(storageRef, pdfBlob, { contentType: "application/pdf" });
-  const pdfUrl = await getDownloadURL(storageRef);
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const smsUrl = isIOS
+    ? `sms:${phone};?&body=${encodeURIComponent(message)}`
+    : `sms:${phone}?body=${encodeURIComponent(message)}`;
 
-  await setDoc(
-    doc(db, `${userBase(state.user.uid)}/docs/${state.current.id}`),
-    {
-      lastPdfUrl: pdfUrl,
-      lastPdfSentAt: serverTimestamp()
-    },
-    { merge: true }
-  );
-
-  return pdfUrl;
+  window.location.href = smsUrl;
 }
 
-async function sendInvoiceBySMS() {
-  try {
-    if (!state.user) return alert("Login requerido.");
-
-    readDocHeaderIntoState();
-    updateTotalsLive();
-
-    const phone = extractPhoneFromContact(state.current.client?.contact || "");
-    if (!phone) {
-      alert("El contacto del cliente no tiene un número válido para SMS.");
-      return;
-    }
-
-    if (!state.current.client?.name?.trim()) {
-      alert("Añade el nombre del cliente antes de enviar el SMS.");
-      return;
-    }
-
-    const pdfUrl = await uploadInvoicePdfAndGetUrl();
-
-    const message =
-      `Hola ${state.current.client.name}, aquí tienes tu ${state.current.type === "FAC" ? "factura" : "cotización"} ${state.current.number} ` +
-      `por ${fmtMoney(state.current.totals.grand)}.\n` +
-      `Descárgala aquí: ${pdfUrl}`;
-
-    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-    const smsUrl = isIOS
-      ? `sms:${phone};?&body=${encodeURIComponent(message)}`
-      : `sms:${phone}?body=${encodeURIComponent(message)}`;
-
-    window.location.href = smsUrl;
-  } catch (err) {
-    console.error("SMS falló:", err);
-    alert("No se pudo preparar el SMS.");
-  }
+function openPaymentLink() {
+  const link = String(state.cfg?.biz?.paymentLink || "").trim();
+  if (!link) return alert("No hay enlace de pago configurado.");
+  window.open(link, "_blank", "noopener,noreferrer");
 }
 
 function bindEvents() {
@@ -1397,6 +1488,7 @@ function bindEvents() {
   $("btnQuickQuote")?.addEventListener("click", () => {
     state.activeDocId = null;
     state.current = newDoc("COT");
+    cacheSave();
     renderInvoicing();
     setView("invoicing");
   });
@@ -1404,6 +1496,7 @@ function bindEvents() {
   $("btnQuickInvoice")?.addEventListener("click", () => {
     state.activeDocId = null;
     state.current = newDoc("FAC");
+    cacheSave();
     renderInvoicing();
     setView("invoicing");
   });
@@ -1412,9 +1505,11 @@ function bindEvents() {
   $("btnOpenConfig")?.addEventListener("click", openBiz);
   $("btnCloseBiz")?.addEventListener("click", closeBiz);
   $("btnSaveBiz")?.addEventListener("click", saveBiz);
+  $("btnOpenPaymentLink")?.addEventListener("click", openPaymentLink);
 
   $("btnToggleCustomerForm")?.addEventListener("click", () => toggleCustomerForm());
   $("btnCancelCustomerForm")?.addEventListener("click", () => toggleCustomerForm(false));
+  $("btnAddCustomer")?.addEventListener("click", saveCustomer);
 
   $("cSearch")?.addEventListener("input", () => {
     updateCustomerSearchClear();
@@ -1422,7 +1517,7 @@ function bindEvents() {
   });
 
   $("btnClearCustomerSearch")?.addEventListener("click", () => {
-    if ($("cSearch")) $("cSearch").value = "";
+    $("cSearch").value = "";
     updateCustomerSearchClear();
     renderCustomers();
   });
@@ -1439,29 +1534,32 @@ function bindEvents() {
     "notes",
     "terms"
   ].forEach((id) => {
-    if (!$(id)) return;
-    $(id).addEventListener("input", () => {
+    $(id)?.addEventListener("input", () => {
       readDocHeaderIntoState();
       updateTotalsLive();
+      cacheSave();
     });
-    $(id).addEventListener("change", () => {
+
+    $(id)?.addEventListener("change", () => {
       readDocHeaderIntoState();
       updateTotalsLive();
+      cacheSave();
     });
   });
 
   $("btnAddItem")?.addEventListener("click", () => {
-    state.current.items.push({ id: uid("it"), desc: "", qty: 1, price: 0, catId: "", svcId: "" });
+    state.current.items.push(emptyItem());
     renderItemsMobile();
     updateTotalsLive();
+    cacheSave();
   });
 
   $("btnSaveDoc")?.addEventListener("click", async () => {
     try {
-      await saveCurrentToHistory({ forceNumber: false });
+      await saveCurrentToHistory();
       alert("Guardado ✅");
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error(err);
       alert("No se pudo guardar.");
     }
   });
@@ -1475,7 +1573,7 @@ function bindEvents() {
 
   $("histSearch")?.addEventListener("input", renderHistory);
 
-  $("btnExportHist")?.addEventListener("click", () => {
+  $("btnExportHist")?.addEventListener("click", async () => {
     const blob = new Blob([JSON.stringify(state.docs || [], null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -1491,16 +1589,19 @@ function bindEvents() {
     for (const d of state.docs || []) {
       await deleteDoc(doc(db, `${userBase(state.user.uid)}/docs/${d.id}`));
     }
+
+    state.docs = [];
+    state.activeDocId = null;
+    state.current = newDoc("FAC");
+    cacheSave();
     await loadAllFromFirestore();
   });
-
-  $("btnAddCustomer")?.addEventListener("click", addCustomer);
 
   $("btnExportBackup")?.addEventListener("click", async () => {
     try {
       await exportBackupFile();
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error(err);
       alert("No se pudo exportar backup.");
     }
   });
@@ -1524,47 +1625,52 @@ function bindEvents() {
   });
 }
 
+function bootFromCacheOrDefault() {
+  cacheLoad();
+
+  if (!state.current) state.current = newDoc("FAC");
+  if (!state.current.type) state.current.type = "FAC";
+
+  refreshAllUI();
+  syncFormFromState();
+  renderItemsMobile();
+  updateTotalsLive();
+  toggleCustomerForm(false);
+  updateCustomerSearchClear();
+}
+
 function boot() {
   ensureAuthButtons();
   bindEvents();
   hideSplashScreen();
 
-  state.cfg = normalizeCfg(defaultCfg());
-  indexCatalog();
-  state.current = newDoc("COT");
-
-  setView("home");
-  syncFormFromState();
-  renderItemsMobile();
-  updateTotalsLive();
-  refreshKPIs();
-  renderLastTransactions();
-  toggleCustomerForm(false);
-  updateCustomerSearchClear();
+  bootFromCacheOrDefault();
+  setView("invoicing");
 
   onAuthStateChanged(auth, async (user) => {
     state.user = user || null;
     refreshAuthUI();
 
     if (state.user) {
-      await loadAllFromFirestore();
+      try {
+        await loadAllFromFirestore();
+      } catch (err) {
+        console.error("Sync falló, sigo con cache local:", err);
+        cacheLoad();
+        refreshAllUI();
+      }
     } else {
-      state.cfg = normalizeCfg(defaultCfg());
-      indexCatalog();
-      state.docs = [];
-      state.customers = [];
-      refreshKPIs();
-      renderLastTransactions();
-      renderHistory();
-      renderCustomers();
-      renderReporting();
+      cacheLoad();
+      refreshAllUI();
     }
 
-    if (!state.current) state.current = newDoc("COT");
-    state.current.taxRate = Number(state.cfg.taxRate || 11.5);
+    if (!state.current) state.current = newDoc("FAC");
+    if (!state.current.type) state.current.type = "FAC";
+
     syncFormFromState();
-    updateTotalsLive();
     renderItemsMobile();
+    updateTotalsLive();
+    cacheSave();
   });
 }
 
