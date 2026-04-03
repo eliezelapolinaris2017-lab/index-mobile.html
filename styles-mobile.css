@@ -418,6 +418,11 @@ textarea.input{
   min-height:110px;
 }
 
+input[readonly]{
+  background:#fcf8fc;
+  color:#6f6877;
+}
+
 .mobileItems{
   display:flex;
   flex-direction:column;
@@ -829,6 +834,16 @@ textarea.input{
   background:linear-gradient(180deg,var(--primary),var(--primary-2));
   color:#fff;
   box-shadow:0 8px 18px rgba(225,0,168,.20);
+}
+
+/* ===== Pago ===== */
+#paymentLinkPreview{
+  font-size:13px;
+  line-height:1.35;
+}
+
+#btnOpenPaymentLink{
+  width:100%;
 }
 
 @media (max-width:420px){
