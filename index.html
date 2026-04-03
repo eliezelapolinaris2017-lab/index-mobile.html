@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Nexus Invoicing" />
 
-  <link rel="stylesheet" href="styles-mobile.css?v=20260310-2100" />
+  <link rel="stylesheet" href="styles-mobile.css?v=20260402-1300" />
 
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
@@ -47,7 +47,7 @@
 
     <main class="mobileContent">
 
-      <section class="view is-active" id="view-home">
+      <section class="view" id="view-home">
         <section class="heroStack">
           <article class="heroCard">
             <div class="heroHead">
@@ -84,7 +84,7 @@
 
             <section class="mobileSectionCard compactCard">
               <div class="sectionMiniHead">
-                <div class="sectionMiniTitle">Last transactions</div>
+                <div class="sectionMiniTitle">Últimos documentos</div>
               </div>
               <div id="lastTransactionsBody" class="mobileListCards compactList"></div>
             </section>
@@ -97,7 +97,7 @@
         </section>
       </section>
 
-      <section class="view" id="view-invoicing">
+      <section class="view is-active" id="view-invoicing">
         <section class="mobileSectionCard">
           <div class="sectionMiniHead">
             <div class="sectionMiniTitle">Documento</div>
@@ -108,8 +108,8 @@
             <div class="field">
               <label>Tipo</label>
               <select class="input" id="docType">
-                <option value="COT">Cotización</option>
                 <option value="FAC">Factura</option>
+                <option value="COT">Cotización</option>
               </select>
             </div>
 
@@ -197,6 +197,29 @@
           </div>
         </section>
 
+        <section class="mobileSectionCard">
+          <div class="sectionMiniHead">
+            <div>
+              <div class="sectionMiniTitle">Pago</div>
+              <div class="heroHint">Acceso rápido para el cliente</div>
+            </div>
+          </div>
+
+          <div class="stackFields">
+            <div class="field">
+              <label>Texto visible</label>
+              <input class="input" id="paymentLabelPreview" placeholder="Pagar ahora" readonly />
+            </div>
+
+            <div class="field">
+              <label>Enlace</label>
+              <input class="input" id="paymentLinkPreview" placeholder="https://..." readonly />
+            </div>
+
+            <button class="btn primary" id="btnOpenPaymentLink" type="button">Abrir botón de pago</button>
+          </div>
+        </section>
+
         <section class="mobileActionBar">
           <button class="btn ghost flex1" id="btnSaveDoc" type="button">Guardar</button>
           <button class="btn ghost" id="btnDuplicate" type="button">Duplicar</button>
@@ -262,6 +285,7 @@
             <div class="sectionMiniTitle">Empresa</div>
             <button class="btn primary smallBtn" id="btnOpenConfig" type="button">Abrir</button>
           </div>
+          <div class="hint">Aquí configuras branding, IVU y logo.</div>
         </section>
 
         <section class="mobileSectionCard">
@@ -307,8 +331,8 @@
     </main>
 
     <nav class="bottomNav" id="mainTabs">
-      <button class="bottomLink tab is-active" data-view="home" type="button">Inicio</button>
-      <button class="bottomLink tab" data-view="invoicing" type="button">Facturar</button>
+      <button class="bottomLink tab" data-view="home" type="button">Inicio</button>
+      <button class="bottomLink tab is-active" data-view="invoicing" type="button">Facturar</button>
       <button class="bottomLink tab" data-view="customers" type="button">Clientes</button>
       <button class="bottomLink tab" data-view="history" type="button">Historial</button>
       <button class="bottomLink tab" data-view="configuration" type="button">Config</button>
@@ -331,30 +355,37 @@
             <label>Nombre empresa</label>
             <input class="input" id="bizName" placeholder="Oasis Air Cleaner Services LLC" />
           </div>
+
           <div class="field">
             <label>Teléfono</label>
             <input class="input" id="bizPhone" placeholder="787-664-3079" />
           </div>
+
           <div class="field">
             <label>Email</label>
             <input class="input" id="bizEmail" placeholder="correo@empresa.com" />
           </div>
+
           <div class="field">
             <label>Dirección</label>
             <input class="input" id="bizAddr" placeholder="Puerto Rico" />
           </div>
+
           <div class="field">
             <label>Texto enlace de pago</label>
             <input class="input" id="bizPaymentLabel" placeholder="Pagar ahora" />
           </div>
+
           <div class="field">
             <label>Enlace de pago</label>
             <input class="input" id="bizPaymentLink" placeholder="https://..." />
           </div>
+
           <div class="field">
             <label>Logo (PNG/JPG)</label>
             <input class="input" id="bizLogo" type="file" accept="image/*" />
           </div>
+
           <div class="field">
             <label>IVU %</label>
             <input class="input" id="taxRate" type="number" step="0.01" placeholder="11.5" />
@@ -366,6 +397,6 @@
     </div>
   </div>
 
-  <script type="module" src="app-mobile.js?v=20260310-2100"></script>
+  <script type="module" src="app-mobile.js?v=20260402-1300"></script>
 </body>
 </html>
