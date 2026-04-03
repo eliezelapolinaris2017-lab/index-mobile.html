@@ -42,11 +42,11 @@ const storage = getStorage(FB_APP);
 const $ = (id) => document.getElementById(id);
 
 const CACHE_KEYS = {
-  docs: "nexus_inv_mobile_cache_docs_v4",
-  customers: "nexus_inv_mobile_cache_customers_v4",
-  cfg: "nexus_inv_mobile_cache_cfg_v4",
-  current: "nexus_inv_mobile_cache_current_v4",
-  activeDocId: "nexus_inv_mobile_cache_activeDocId_v4"
+  docs: "nexus_inv_mobile_cache_docs_v5",
+  customers: "nexus_inv_mobile_cache_customers_v5",
+  cfg: "nexus_inv_mobile_cache_cfg_v5",
+  current: "nexus_inv_mobile_cache_current_v5",
+  activeDocId: "nexus_inv_mobile_cache_activeDocId_v5"
 };
 
 const state = {
@@ -1165,7 +1165,7 @@ async function saveBiz() {
 async function buildBackupPayload() {
   return {
     exportedAt: new Date().toISOString(),
-    version: "nexus_invoicing_mobile_backup_local_v4",
+    version: "nexus_invoicing_mobile_backup_local_v5",
     docs: state.docs || [],
     customers: state.customers || [],
     cfg: state.cfg || defaultCfg()
@@ -1350,7 +1350,9 @@ function buildPdfDoc() {
   pdf.setFontSize(13);
   pdf.text(`Total: ${fmtMoney(docData.totals?.grand || 0)}`, rightX, y, { align: "right" });
 
-  y += 28;
+  const paymentBlockTop = y + 20;
+
+  y += 34;
 
   if (docData.notes) {
     pdf.setFontSize(11);
@@ -1359,7 +1361,7 @@ function buildPdfDoc() {
     y += 16;
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(10);
-    const noteLines = pdf.splitTextToSize(String(docData.notes), pageW - margin * 2);
+    const noteLines = pdf.splitTextToSize(String(docData.notes), pageW - margin * 2 - 180);
     pdf.text(noteLines, margin, y);
     y += noteLines.length * 12 + 18;
   }
@@ -1371,42 +1373,29 @@ function buildPdfDoc() {
     y += 16;
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(10);
-    const termLines = pdf.splitTextToSize(String(docData.terms), pageW - margin * 2);
+    const termLines = pdf.splitTextToSize(String(docData.terms), pageW - margin * 2 - 180);
     pdf.text(termLines, margin, y);
     y += termLines.length * 12 + 18;
   }
 
   if (biz.paymentLink) {
-    if (y > pageH - 140) {
+    const btnLabel = biz.paymentLabel || "Pagar ahora";
+    const btnW = 150;
+    const btnH = 30;
+    const btnX = pageW - margin - btnW;
+    let btnY = paymentBlockTop;
+
+    if (btnY > pageH - 80) {
       pdf.addPage();
-      y = 60;
+      btnY = 60;
     }
 
     pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(11);
-    pdf.text("PAGO", margin, y);
-    y += 16;
-
-    pdf.setFont("helvetica", "normal");
     pdf.setFontSize(10);
-    pdf.text("Pago disponible en línea.", margin, y);
-    y += 16;
+    pdf.text("PAGO EN LÍNEA", pageW - margin, btnY, { align: "right" });
+    btnY += 12;
 
-    const btnLabel = biz.paymentLabel || "Pagar ahora";
-    const btnW = Math.min(210, pageW - margin * 2);
-    const btnH = 30;
-    drawPdfPaymentButton(pdf, margin, y, btnW, btnH, btnLabel, biz.paymentLink);
-    y += btnH + 10;
-
-    pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(9);
-    pdf.setTextColor(120, 120, 120);
-
-    const cleanHint = "Si el botón no abre desde la vista previa, comparta o descargue el PDF y ábralo en un visor compatible.";
-    const hintLines = pdf.splitTextToSize(cleanHint, pageW - margin * 2);
-    pdf.text(hintLines, margin, y);
-
-    pdf.setTextColor(0, 0, 0);
+    drawPdfPaymentButton(pdf, btnX, btnY, btnW, btnH, btnLabel, biz.paymentLink);
   }
 
   return pdf;
