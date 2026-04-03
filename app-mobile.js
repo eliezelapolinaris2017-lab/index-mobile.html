@@ -42,11 +42,11 @@ const storage = getStorage(FB_APP);
 const $ = (id) => document.getElementById(id);
 
 const CACHE_KEYS = {
-  docs: "nexus_inv_mobile_cache_docs_v5",
-  customers: "nexus_inv_mobile_cache_customers_v5",
-  cfg: "nexus_inv_mobile_cache_cfg_v5",
-  current: "nexus_inv_mobile_cache_current_v5",
-  activeDocId: "nexus_inv_mobile_cache_activeDocId_v5"
+  docs: "nexus_inv_mobile_cache_docs_v6",
+  customers: "nexus_inv_mobile_cache_customers_v6",
+  cfg: "nexus_inv_mobile_cache_cfg_v6",
+  current: "nexus_inv_mobile_cache_current_v6",
+  activeDocId: "nexus_inv_mobile_cache_activeDocId_v6"
 };
 
 const state = {
@@ -1165,7 +1165,7 @@ async function saveBiz() {
 async function buildBackupPayload() {
   return {
     exportedAt: new Date().toISOString(),
-    version: "nexus_invoicing_mobile_backup_local_v5",
+    version: "nexus_invoicing_mobile_backup_local_v6",
     docs: state.docs || [],
     customers: state.customers || [],
     cfg: state.cfg || defaultCfg()
@@ -1268,11 +1268,7 @@ function buildPdfDoc() {
 
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(10);
-  const bizLines = [
-    biz.phone || "",
-    biz.email || "",
-    biz.addr || ""
-  ].filter(Boolean);
+  const bizLines = [biz.phone || "", biz.email || "", biz.addr || ""].filter(Boolean);
   bizLines.forEach((line, i) => {
     pdf.text(String(line), biz.logoDataUrl ? 108 : margin, y + 34 + i * 14);
   });
@@ -1312,7 +1308,7 @@ function buildPdfDoc() {
     y += 14;
   });
 
-  y += 10;
+  y += 12;
 
   const rows = (docData.items || []).map((it) => [
     String(it.desc || "Item"),
@@ -1329,30 +1325,42 @@ function buildPdfDoc() {
     styles: {
       font: "helvetica",
       fontSize: 10,
-      cellPadding: 8
+      cellPadding: 8,
+      lineColor: [228, 228, 228],
+      lineWidth: 0.5,
+      textColor: [20, 20, 20]
     },
     headStyles: {
-      fillColor: [225, 0, 168]
+      fillColor: [245, 245, 245],
+      textColor: [20, 20, 20],
+      lineColor: [228, 228, 228],
+      lineWidth: 0.5,
+      fontStyle: "bold"
+    },
+    alternateRowStyles: {
+      fillColor: [255, 255, 255]
+    },
+    bodyStyles: {
+      fillColor: [255, 255, 255]
     },
     theme: "grid"
   });
 
-  y = pdf.lastAutoTable.finalY + 20;
+  y = pdf.lastAutoTable.finalY + 18;
 
-  const rightX = pageW - margin;
-
+  const totalsX = pageW - margin;
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(11);
-  pdf.text(`Subtotal: ${fmtMoney(docData.totals?.sub || 0)}`, rightX, y, { align: "right" });
+  pdf.text(`Subtotal: ${fmtMoney(docData.totals?.sub || 0)}`, totalsX, y, { align: "right" });
   y += 16;
-  pdf.text(`IVU: ${fmtMoney(docData.totals?.tax || 0)}`, rightX, y, { align: "right" });
+  pdf.text(`IVU: ${fmtMoney(docData.totals?.tax || 0)}`, totalsX, y, { align: "right" });
   y += 18;
   pdf.setFontSize(13);
-  pdf.text(`Total: ${fmtMoney(docData.totals?.grand || 0)}`, rightX, y, { align: "right" });
+  pdf.text(`Total: ${fmtMoney(docData.totals?.grand || 0)}`, totalsX, y, { align: "right" });
 
-  const paymentBlockTop = y + 20;
+  const paymentAnchorY = y + 12;
 
-  y += 34;
+  y += 36;
 
   if (docData.notes) {
     pdf.setFontSize(11);
@@ -1380,20 +1388,15 @@ function buildPdfDoc() {
 
   if (biz.paymentLink) {
     const btnLabel = biz.paymentLabel || "Pagar ahora";
-    const btnW = 150;
-    const btnH = 30;
+    const btnW = 132;
+    const btnH = 28;
     const btnX = pageW - margin - btnW;
-    let btnY = paymentBlockTop;
+    let btnY = paymentAnchorY;
 
     if (btnY > pageH - 80) {
       pdf.addPage();
       btnY = 60;
     }
-
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(10);
-    pdf.text("PAGO EN LÍNEA", pageW - margin, btnY, { align: "right" });
-    btnY += 12;
 
     drawPdfPaymentButton(pdf, btnX, btnY, btnW, btnH, btnLabel, biz.paymentLink);
   }
@@ -1401,29 +1404,46 @@ function buildPdfDoc() {
   return pdf;
 }
 
-function makePreview() {
-  try {
-    const pdf = buildPdfDoc();
-    const blob = pdf.output("blob");
-    if (state.previewBlobUrl) URL.revokeObjectURL(state.previewBlobUrl);
-    state.previewBlobUrl = URL.createObjectURL(blob);
-    $("pdfFrame").src = state.previewBlobUrl;
-    setView("preview");
-  } catch (err) {
-    console.error(err);
-    alert("No se pudo generar preview.");
-  }
+async function createPdfBlobAndEnsureSaved() {
+  await saveCurrentToHistory();
+  const pdf = buildPdfDoc();
+  const blob = pdf.output("blob");
+  const safeName = `${state.current.type}_${state.current.number || "AUTO"}.pdf`;
+  return { pdf, blob, safeName };
+}
+
+async function uploadInvoicePdfAndGetUrl() {
+  if (!state.user) throw new Error("Login requerido.");
+
+  const { blob, safeName } = await createPdfBlobAndEnsureSaved();
+  const path = `users/${state.user.uid}/sent-pdfs/${safeName}`;
+  const storageRef = ref(storage, path);
+
+  await uploadBytes(storageRef, blob, { contentType: "application/pdf" });
+  const pdfUrl = await getDownloadURL(storageRef);
+
+  await setDoc(
+    doc(db, `${userBase(state.user.uid)}/docs/${state.current.id}`),
+    {
+      lastPdfUrl: pdfUrl,
+      lastPdfSentAt: serverTimestamp()
+    },
+    { merge: true }
+  );
+
+  state.current.lastPdfUrl = pdfUrl;
+  const idx = state.docs.findIndex((d) => d.id === state.current.id);
+  if (idx >= 0) state.docs[idx].lastPdfUrl = pdfUrl;
+  cacheSave();
+
+  return pdfUrl;
 }
 
 async function confirmPDF() {
   if (!state.user) return alert("Login requerido.");
 
-  await saveCurrentToHistory();
-
   try {
-    const pdf = buildPdfDoc();
-    const blob = pdf.output("blob");
-    const safeName = `${state.current.type}_${state.current.number || "AUTO"}.pdf`;
+    const { pdf, blob, safeName } = await createPdfBlobAndEnsureSaved();
     const file = new File([blob], safeName, { type: "application/pdf" });
 
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -1432,12 +1452,12 @@ async function confirmPDF() {
         title: safeName,
         text: `${state.current.type === "FAC" ? "Factura" : "Cotización"} ${state.current.number || ""}`.trim()
       });
-    } else {
-      pdf.save(safeName);
+      return;
     }
 
-    makePreview();
+    pdf.save(safeName);
   } catch (err) {
+    if (err?.name === "AbortError") return;
     console.error("PDF falló:", err);
     alert("No se pudo generar o compartir el PDF.");
   }
@@ -1461,23 +1481,30 @@ function extractPhoneFromContact(raw) {
 }
 
 async function sendInvoiceBySMS() {
-  readDocHeaderIntoState();
-  updateTotalsLive();
+  try {
+    if (!state.user) return alert("Login requerido.");
 
-  const phone = extractPhoneFromContact(state.current.client?.contact || "");
-  if (!phone) return alert("El contacto del cliente no tiene un número válido.");
+    readDocHeaderIntoState();
+    updateTotalsLive();
 
-  const label = state.current.type === "FAC" ? "factura" : "cotización";
-  const message =
-    `Hola ${state.current.client?.name || ""}, te compartimos tu ${label} ${state.current.number || ""} ` +
-    `por ${fmtMoney(state.current.totals?.grand || 0)}.`.trim();
+    const phone = extractPhoneFromContact(state.current.client?.contact || "");
+    if (!phone) return alert("El contacto del cliente no tiene un número válido.");
 
-  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const smsUrl = isIOS
-    ? `sms:${phone};?&body=${encodeURIComponent(message)}`
-    : `sms:${phone}?body=${encodeURIComponent(message)}`;
+    const pdfUrl = await uploadInvoicePdfAndGetUrl();
+    const label = state.current.type === "FAC" ? "factura" : "cotización";
+    const msg =
+      `Hola ${state.current.client?.name || ""}, te compartimos tu ${label} ${state.current.number || ""} por ${fmtMoney(state.current.totals?.grand || 0)}. PDF: ${pdfUrl}`.trim();
 
-  window.location.href = smsUrl;
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const smsUrl = isIOS
+      ? `sms:${phone};?&body=${encodeURIComponent(msg)}`
+      : `sms:${phone}?body=${encodeURIComponent(msg)}`;
+
+    window.location.href = smsUrl;
+  } catch (err) {
+    console.error("SMS falló:", err);
+    alert("No se pudo preparar el mensaje con el PDF.");
+  }
 }
 
 function openPaymentLink() {
@@ -1573,7 +1600,7 @@ function bindEvents() {
   $("btnPDF")?.addEventListener("click", confirmPDF);
   $("btnSMS")?.addEventListener("click", sendInvoiceBySMS);
   $("btnConfirmFromPreview")?.addEventListener("click", confirmPDF);
-  $("btnRefreshPreview")?.addEventListener("click", makePreview);
+  $("btnRefreshPreview")?.addEventListener("click", () => {});
   $("btnDuplicate")?.addEventListener("click", duplicateDoc);
   $("btnDelete")?.addEventListener("click", deleteDocCloud);
 
