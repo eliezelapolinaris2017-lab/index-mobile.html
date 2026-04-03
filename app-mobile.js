@@ -42,11 +42,11 @@ const storage = getStorage(FB_APP);
 const $ = (id) => document.getElementById(id);
 
 const CACHE_KEYS = {
-  docs: "nexus_inv_mobile_cache_docs_v3",
-  customers: "nexus_inv_mobile_cache_customers_v3",
-  cfg: "nexus_inv_mobile_cache_cfg_v3",
-  current: "nexus_inv_mobile_cache_current_v3",
-  activeDocId: "nexus_inv_mobile_cache_activeDocId_v3"
+  docs: "nexus_inv_mobile_cache_docs_v4",
+  customers: "nexus_inv_mobile_cache_customers_v4",
+  cfg: "nexus_inv_mobile_cache_cfg_v4",
+  current: "nexus_inv_mobile_cache_current_v4",
+  activeDocId: "nexus_inv_mobile_cache_activeDocId_v4"
 };
 
 const state = {
@@ -1165,7 +1165,7 @@ async function saveBiz() {
 async function buildBackupPayload() {
   return {
     exportedAt: new Date().toISOString(),
-    version: "nexus_invoicing_mobile_backup_local_v3",
+    version: "nexus_invoicing_mobile_backup_local_v4",
     docs: state.docs || [],
     customers: state.customers || [],
     cfg: state.cfg || defaultCfg()
@@ -1222,6 +1222,23 @@ async function restoreBackupFromFile(file) {
 
   await loadAllFromFirestore();
   alert("Backup restaurado ✅");
+}
+
+function drawPdfPaymentButton(pdf, x, y, w, h, label, url) {
+  pdf.setFillColor(225, 0, 168);
+  pdf.setDrawColor(225, 0, 168);
+  pdf.roundedRect(x, y, w, h, 8, 8, "F");
+
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(11);
+  pdf.setTextColor(255, 255, 255);
+  pdf.text(label, x + w / 2, y + h / 2 + 4, { align: "center" });
+
+  try {
+    pdf.link(x, y, w, h, { url });
+  } catch {}
+
+  pdf.setTextColor(0, 0, 0);
 }
 
 function buildPdfDoc() {
@@ -1360,7 +1377,7 @@ function buildPdfDoc() {
   }
 
   if (biz.paymentLink) {
-    if (y > pageH - 100) {
+    if (y > pageH - 140) {
       pdf.addPage();
       y = 60;
     }
@@ -1370,26 +1387,26 @@ function buildPdfDoc() {
     pdf.text("PAGO", margin, y);
     y += 16;
 
-    const payLabel = biz.paymentLabel || "Pagar ahora";
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(10);
-    pdf.text(`Acceso de pago: ${payLabel}`, margin, y);
+    pdf.text("Pago disponible en línea.", margin, y);
     y += 16;
 
-    try {
-      pdf.setTextColor(0, 102, 204);
-      pdf.textWithLink(payLabel, margin, y, { url: biz.paymentLink });
-      y += 14;
-      pdf.textWithLink(biz.paymentLink, margin, y, { url: biz.paymentLink });
-      pdf.setTextColor(0, 0, 0);
-    } catch {
-      pdf.setTextColor(0, 102, 204);
-      pdf.text(payLabel, margin, y);
-      y += 14;
-      const linkLines = pdf.splitTextToSize(String(biz.paymentLink), pageW - margin * 2);
-      pdf.text(linkLines, margin, y);
-      pdf.setTextColor(0, 0, 0);
-    }
+    const btnLabel = biz.paymentLabel || "Pagar ahora";
+    const btnW = Math.min(210, pageW - margin * 2);
+    const btnH = 30;
+    drawPdfPaymentButton(pdf, margin, y, btnW, btnH, btnLabel, biz.paymentLink);
+    y += btnH + 10;
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    pdf.setTextColor(120, 120, 120);
+
+    const cleanHint = "Si el botón no abre desde la vista previa, comparta o descargue el PDF y ábralo en un visor compatible.";
+    const hintLines = pdf.splitTextToSize(cleanHint, pageW - margin * 2);
+    pdf.text(hintLines, margin, y);
+
+    pdf.setTextColor(0, 0, 0);
   }
 
   return pdf;
