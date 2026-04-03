@@ -42,11 +42,11 @@ const storage = getStorage(FB_APP);
 const $ = (id) => document.getElementById(id);
 
 const CACHE_KEYS = {
-  docs: "nexus_inv_mobile_cache_docs_v6",
-  customers: "nexus_inv_mobile_cache_customers_v6",
-  cfg: "nexus_inv_mobile_cache_cfg_v6",
-  current: "nexus_inv_mobile_cache_current_v6",
-  activeDocId: "nexus_inv_mobile_cache_activeDocId_v6"
+  docs: "nexus_inv_mobile_cache_docs_v7",
+  customers: "nexus_inv_mobile_cache_customers_v7",
+  cfg: "nexus_inv_mobile_cache_cfg_v7",
+  current: "nexus_inv_mobile_cache_current_v7",
+  activeDocId: "nexus_inv_mobile_cache_activeDocId_v7"
 };
 
 const state = {
@@ -57,7 +57,6 @@ const state = {
   docs: [],
   customers: [],
   cfg: null,
-  previewBlobUrl: null,
   customerFormOpen: false,
   editingCustomerId: null,
   catalogIndex: { catById: new Map(), svcById: new Map() }
@@ -69,12 +68,11 @@ function hideSplashScreen() {
   setTimeout(() => splash.classList.add("is-hidden"), 1200);
 }
 
-const fmtMoney = (n) => {
-  return Number(n || 0).toLocaleString("en-US", {
+const fmtMoney = (n) =>
+  Number(n || 0).toLocaleString("en-US", {
     style: "currency",
     currency: "USD"
   });
-};
 
 function toISODate(value) {
   const d = value ? new Date(value) : new Date();
@@ -129,7 +127,6 @@ async function fileToImage(file) {
 
 async function normalizeLogoFileForPdf(file) {
   const img = await fileToImage(file);
-
   const maxSize = 600;
   let { width, height } = img;
 
@@ -138,21 +135,17 @@ async function normalizeLogoFileForPdf(file) {
       height = Math.round((height * maxSize) / width);
       width = maxSize;
     }
-  } else {
-    if (height > maxSize) {
-      width = Math.round((width * maxSize) / height);
-      height = maxSize;
-    }
+  } else if (height > maxSize) {
+    width = Math.round((width * maxSize) / height);
+    height = maxSize;
   }
 
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
-
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, width, height);
   ctx.drawImage(img, 0, 0, width, height);
-
   return canvas.toDataURL("image/png");
 }
 
@@ -166,24 +159,10 @@ function defaultCatalog() {
           {
             id: "svc_mant_res",
             name: "Mantenimiento Preventivo",
-            desc: "Servicio preventivo: limpieza, revisión eléctrica, drenajes y prueba operacional.",
+            desc: "Mantenimiento preventivo",
             price: 55,
-            notes: "Precio sujeto a acceso y condición.",
-            terms: "Pago contra entrega."
-          }
-        ]
-      },
-      {
-        id: "cat_diag",
-        name: "Diagnóstico",
-        services: [
-          {
-            id: "svc_diag",
-            name: "Diagnóstico Técnico",
-            desc: "Evaluación técnica y recomendación de reparación.",
-            price: 45,
-            notes: "Diagnóstico no incluye reparación ni piezas.",
-            terms: "El diagnóstico se acredita si se aprueba la reparación el mismo día."
+            notes: "",
+            terms: ""
           }
         ]
       }
@@ -198,7 +177,7 @@ function defaultCfg() {
       phone: "",
       email: "",
       addr: "Puerto Rico",
-      paymentLabel: "Pagar ahora",
+      paymentLabel: "Pagar factura",
       paymentLink: "",
       logoUrl: "",
       logoDataUrl: ""
@@ -211,7 +190,6 @@ function defaultCfg() {
 function normalizeCfg(cfg) {
   const base = defaultCfg();
   const merged = { ...base, ...(cfg || {}) };
-
   merged.biz = { ...base.biz, ...(cfg?.biz || {}) };
   merged.taxRate = Number(cfg?.taxRate ?? base.taxRate);
   merged.catalog = cfg?.catalog?.categories ? cfg.catalog : base.catalog;
@@ -446,7 +424,6 @@ async function saveSettingsToFirestore() {
 
 function setView(view) {
   state.view = view;
-
   document.querySelectorAll(".view").forEach((v) => v.classList.remove("is-active"));
   $(`view-${view}`)?.classList.add("is-active");
 
@@ -537,8 +514,8 @@ function renderItemsMobile() {
   if (!wrap || !state.current) return;
 
   wrap.innerHTML = "";
-
   const items = state.current.items || [];
+
   if (!items.length) {
     wrap.innerHTML = `<div class="listCard"><div class="listTitle">Sin items</div><div class="listSub">Añade una línea para comenzar.</div></div>`;
     return;
@@ -649,8 +626,7 @@ function renderItemsMobile() {
     });
 
     priceInput.addEventListener("input", () => {
-      const normalized = String(priceInput.value || "").replace(",", ".");
-      it.price = Number(normalized || 0);
+      it.price = Number(String(priceInput.value || "").replace(",", ".") || 0);
       updateTotalsLive();
       cacheSave();
       refreshRowTotal();
@@ -694,9 +670,8 @@ function updateTotalsLive() {
 }
 
 function renderPaymentPanel() {
-  const label = state.cfg?.biz?.paymentLabel || "Pagar ahora";
+  const label = state.cfg?.biz?.paymentLabel || "Pagar factura";
   const link = state.cfg?.biz?.paymentLink || "";
-
   if ($("paymentLabelPreview")) $("paymentLabelPreview").value = label;
   if ($("paymentLinkPreview")) $("paymentLinkPreview").value = link;
   if ($("btnOpenPaymentLink")) $("btnOpenPaymentLink").disabled = !link.trim();
@@ -720,8 +695,8 @@ function nextNumber(type) {
   });
 
   if (state.current?.number) {
-    const currentMatch = String(state.current.number).match(re);
-    if (currentMatch) max = Math.max(max, Number(currentMatch[1]));
+    const m = String(state.current.number).match(re);
+    if (m) max = Math.max(max, Number(m[1]));
   }
 
   return `${prefix}-${year}-${String(max + 1).padStart(4, "0")}`;
@@ -767,7 +742,6 @@ async function loadDocFromHistory(id) {
 
   state.activeDocId = found.id;
   state.current = normalizeDoc(found);
-
   syncFormFromState();
   renderItemsMobile();
   updateTotalsLive();
@@ -791,17 +765,13 @@ async function deleteDocCloud() {
 
 function duplicateDoc() {
   readDocHeaderIntoState();
-
   const copy = normalizeDoc(state.current);
   copy.id = uid("doc");
   copy.number = "";
   copy.status = "PENDIENTE";
   copy.createdAt = new Date().toISOString();
   copy.updatedAt = new Date().toISOString();
-  copy.items = (copy.items || []).map((it) => ({
-    ...it,
-    id: uid("it")
-  }));
+  copy.items = (copy.items || []).map((it) => ({ ...it, id: uid("it") }));
 
   state.activeDocId = null;
   state.current = copy;
@@ -822,10 +792,7 @@ async function quickMarkPaid(id) {
 
   await setDoc(
     doc(db, `${userBase(state.user.uid)}/docs/${id}`),
-    {
-      status: "PAGADA",
-      updatedAt: serverTimestamp()
-    },
+    { status: "PAGADA", updatedAt: serverTimestamp() },
     { merge: true }
   );
 
@@ -847,10 +814,9 @@ function renderHistory() {
 
   let rows = [...(state.docs || [])];
   if (q) {
-    rows = rows.filter((d) => {
-      const s = `${d.number || ""} ${d.client?.name || ""} ${d.type || ""}`.toLowerCase();
-      return s.includes(q);
-    });
+    rows = rows.filter((d) =>
+      `${d.number || ""} ${d.client?.name || ""} ${d.type || ""}`.toLowerCase().includes(q)
+    );
   }
 
   if (!rows.length) {
@@ -898,10 +864,8 @@ function renderHistory() {
     `;
 
     card.querySelector(".hist-open").onclick = () => loadDocFromHistory(d.id);
-
     const paidBtn = card.querySelector(".hist-paid");
     if (paidBtn) paidBtn.onclick = () => quickMarkPaid(d.id);
-
     card.querySelector(".hist-pdf").onclick = async () => {
       await loadDocFromHistory(d.id);
       await confirmPDF();
@@ -982,16 +946,14 @@ function toggleCustomerForm(force = null, customer = null) {
 
   state.customerFormOpen = force === null ? !state.customerFormOpen : !!force;
   state.editingCustomerId = customer?.id || null;
-
   card.classList.toggle("is-hidden", !state.customerFormOpen);
   btn.textContent = state.customerFormOpen ? "Ocultar" : "Nuevo cliente";
 
   const titleNode = card.querySelector(".sectionMiniTitle");
   if (titleNode) titleNode.textContent = state.editingCustomerId ? "Editar cliente" : "Nuevo cliente";
 
-  if (state.customerFormOpen) {
-    fillCustomerForm(customer);
-  } else {
+  if (state.customerFormOpen) fillCustomerForm(customer);
+  else {
     state.editingCustomerId = null;
     fillCustomerForm(null);
   }
@@ -1006,10 +968,9 @@ function renderCustomers() {
 
   let rows = [...(state.customers || [])];
   if (q) {
-    rows = rows.filter((c) => {
-      const s = `${c.name || ""} ${c.contact || ""} ${c.addr || ""}`.toLowerCase();
-      return s.includes(q);
-    });
+    rows = rows.filter((c) =>
+      `${c.name || ""} ${c.contact || ""} ${c.addr || ""}`.toLowerCase().includes(q)
+    );
   }
 
   if (!rows.length) {
@@ -1089,19 +1050,12 @@ async function saveCustomer() {
   };
 
   if (state.editingCustomerId) {
-    await setDoc(
-      doc(db, `${userBase(state.user.uid)}/customers/${state.editingCustomerId}`),
-      payload,
-      { merge: true }
-    );
+    await setDoc(doc(db, `${userBase(state.user.uid)}/customers/${state.editingCustomerId}`), payload, { merge: true });
   } else {
     const id = uid("cus");
     await setDoc(
       doc(db, `${userBase(state.user.uid)}/customers/${id}`),
-      {
-        ...payload,
-        createdAt: serverTimestamp()
-      },
+      { ...payload, createdAt: serverTimestamp() },
       { merge: true }
     );
   }
@@ -1117,7 +1071,7 @@ function openBiz() {
   $("bizPhone").value = cfg.biz?.phone || "";
   $("bizEmail").value = cfg.biz?.email || "";
   $("bizAddr").value = cfg.biz?.addr || "";
-  $("bizPaymentLabel").value = cfg.biz?.paymentLabel || "Pagar ahora";
+  $("bizPaymentLabel").value = cfg.biz?.paymentLabel || "Pagar factura";
   $("bizPaymentLink").value = cfg.biz?.paymentLink || "";
   $("taxRate").value = String(cfg.taxRate ?? 11.5);
   $("settingsPanel").style.display = "flex";
@@ -1135,7 +1089,7 @@ async function saveBiz() {
   cfg.biz.phone = ($("bizPhone")?.value || "").trim();
   cfg.biz.email = ($("bizEmail")?.value || "").trim();
   cfg.biz.addr = ($("bizAddr")?.value || "").trim();
-  cfg.biz.paymentLabel = ($("bizPaymentLabel")?.value || "").trim() || "Pagar ahora";
+  cfg.biz.paymentLabel = ($("bizPaymentLabel")?.value || "").trim() || "Pagar factura";
   cfg.biz.paymentLink = ($("bizPaymentLink")?.value || "").trim();
   cfg.taxRate = Number($("taxRate")?.value || 11.5);
 
@@ -1165,7 +1119,7 @@ async function saveBiz() {
 async function buildBackupPayload() {
   return {
     exportedAt: new Date().toISOString(),
-    version: "nexus_invoicing_mobile_backup_local_v6",
+    version: "nexus_invoicing_mobile_backup_local_v7",
     docs: state.docs || [],
     customers: state.customers || [],
     cfg: state.cfg || defaultCfg()
@@ -1200,10 +1154,7 @@ async function restoreBackupFromFile(file) {
     const cid = c.id || uid("cus");
     await setDoc(
       doc(db, `${userBase(state.user.uid)}/customers/${cid}`),
-      {
-        ...normalizeCustomer({ ...c, id: cid }),
-        restoredAt: serverTimestamp()
-      },
+      { ...normalizeCustomer({ ...c, id: cid }), restoredAt: serverTimestamp() },
       { merge: true }
     );
   }
@@ -1212,10 +1163,7 @@ async function restoreBackupFromFile(file) {
     const did = d.id || uid("doc");
     await setDoc(
       doc(db, `${userBase(state.user.uid)}/docs/${did}`),
-      {
-        ...normalizeDoc({ ...d, id: did }),
-        restoredAt: serverTimestamp()
-      },
+      { ...normalizeDoc({ ...d, id: did }), restoredAt: serverTimestamp() },
       { merge: true }
     );
   }
@@ -1227,17 +1175,14 @@ async function restoreBackupFromFile(file) {
 function drawPdfPaymentButton(pdf, x, y, w, h, label, url) {
   pdf.setFillColor(225, 0, 168);
   pdf.setDrawColor(225, 0, 168);
-  pdf.roundedRect(x, y, w, h, 8, 8, "F");
-
+  pdf.roundedRect(x, y, w, h, 7, 7, "F");
   pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(11);
+  pdf.setFontSize(10);
   pdf.setTextColor(255, 255, 255);
-  pdf.text(label, x + w / 2, y + h / 2 + 4, { align: "center" });
-
+  pdf.text(label, x + w / 2, y + h / 2 + 3.5, { align: "center" });
   try {
     pdf.link(x, y, w, h, { url });
   } catch {}
-
   pdf.setTextColor(0, 0, 0);
 }
 
@@ -1253,54 +1198,61 @@ function buildPdfDoc() {
 
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
-  const margin = 40;
-  let y = 42;
-
-  if (biz.logoDataUrl) {
-    try {
-      pdf.addImage(biz.logoDataUrl, "PNG", margin, y - 4, 58, 58);
-    } catch {}
-  }
+  const margin = 44;
+  let y = 48;
 
   pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(18);
-  pdf.text(String(biz.name || "Tu Empresa"), biz.logoDataUrl ? 108 : margin, y + 14);
+  pdf.setFontSize(20);
+  pdf.text(String(biz.name || "Tu Empresa"), margin, y);
 
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(10);
-  const bizLines = [biz.phone || "", biz.email || "", biz.addr || ""].filter(Boolean);
-  bizLines.forEach((line, i) => {
-    pdf.text(String(line), biz.logoDataUrl ? 108 : margin, y + 34 + i * 14);
+  y += 22;
+
+  const bizLines = [
+    biz.phone || "",
+    biz.email || "",
+    biz.addr || ""
+  ].filter(Boolean);
+
+  bizLines.forEach((line) => {
+    pdf.text(String(line), margin, y);
+    y += 14;
   });
 
+  const rightX = pageW - margin;
+  let headerY = 48;
+
   pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(18);
-  pdf.text(docData.type === "FAC" ? "FACTURA" : "COTIZACIÓN", pageW - margin, y + 16, { align: "right" });
+  pdf.setFontSize(20);
+  pdf.text(docData.type === "FAC" ? "FACTURA" : "COTIZACIÓN", rightX, headerY, { align: "right" });
 
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(10);
-  pdf.text(`Número: ${docData.number || "AUTO"}`, pageW - margin, y + 36, { align: "right" });
-  pdf.text(`Fecha: ${docData.date || "—"}`, pageW - margin, y + 50, { align: "right" });
-  pdf.text(`Estado: ${docData.status || "PENDIENTE"}`, pageW - margin, y + 64, { align: "right" });
+  headerY += 24;
+  pdf.text(`Número: ${docData.number || "AUTO"}`, rightX, headerY, { align: "right" });
+  headerY += 16;
+  pdf.text(`Fecha: ${docData.date || "—"}`, rightX, headerY, { align: "right" });
+  headerY += 16;
+  pdf.text(`Estado: ${docData.status || "PENDIENTE"}`, rightX, headerY, { align: "right" });
 
-  y = 126;
+  y = Math.max(y, headerY) + 16;
 
-  pdf.setDrawColor(226, 226, 234);
+  pdf.setDrawColor(225, 225, 225);
   pdf.line(margin, y, pageW - margin, y);
-  y += 18;
+  y += 22;
 
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(11);
   pdf.text("CLIENTE", margin, y);
-  y += 16;
+  y += 18;
 
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(10);
   const clientLines = [
     docData.client?.name || "",
     docData.client?.contact || "",
-    docData.client?.addr || "",
-    docData.type === "COT" && docData.validUntil ? `Válida hasta: ${docData.validUntil}` : ""
+    docData.client?.addr || ""
   ].filter(Boolean);
 
   clientLines.forEach((line) => {
@@ -1308,10 +1260,20 @@ function buildPdfDoc() {
     y += 14;
   });
 
+  if (docData.type === "COT" && docData.validUntil) {
+    y += 10;
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Válida hasta", margin, y);
+    y += 16;
+    pdf.setFont("helvetica", "normal");
+    pdf.text(String(docData.validUntil), margin, y);
+    y += 10;
+  }
+
   y += 12;
 
   const rows = (docData.items || []).map((it) => [
-    String(it.desc || "Item"),
+    String(it.desc || ""),
     String(Number(it.qty || 0)),
     fmtMoney(it.price || 0),
     fmtMoney(Number(it.qty || 0) * Number(it.price || 0))
@@ -1322,84 +1284,83 @@ function buildPdfDoc() {
     head: [["Descripción", "Cant.", "Precio", "Total"]],
     body: rows,
     margin: { left: margin, right: margin },
+    theme: "grid",
     styles: {
       font: "helvetica",
       fontSize: 10,
       cellPadding: 8,
       lineColor: [228, 228, 228],
       lineWidth: 0.5,
-      textColor: [20, 20, 20]
+      textColor: [30, 30, 30]
     },
     headStyles: {
-      fillColor: [245, 245, 245],
-      textColor: [20, 20, 20],
+      fillColor: [255, 255, 255],
+      textColor: [0, 0, 0],
       lineColor: [228, 228, 228],
       lineWidth: 0.5,
       fontStyle: "bold"
     },
-    alternateRowStyles: {
-      fillColor: [255, 255, 255]
-    },
     bodyStyles: {
       fillColor: [255, 255, 255]
     },
-    theme: "grid"
+    alternateRowStyles: {
+      fillColor: [255, 255, 255]
+    }
   });
 
   y = pdf.lastAutoTable.finalY + 18;
 
-  const totalsX = pageW - margin;
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(11);
-  pdf.text(`Subtotal: ${fmtMoney(docData.totals?.sub || 0)}`, totalsX, y, { align: "right" });
+  pdf.text(`Subtotal: ${fmtMoney(docData.totals?.sub || 0)}`, rightX, y, { align: "right" });
   y += 16;
-  pdf.text(`IVU: ${fmtMoney(docData.totals?.tax || 0)}`, totalsX, y, { align: "right" });
-  y += 18;
+  pdf.text(`IVU: ${fmtMoney(docData.totals?.tax || 0)}`, rightX, y, { align: "right" });
+  y += 20;
   pdf.setFontSize(13);
-  pdf.text(`Total: ${fmtMoney(docData.totals?.grand || 0)}`, totalsX, y, { align: "right" });
+  pdf.text(`TOTAL: ${fmtMoney(docData.totals?.grand || 0)}`, rightX, y, { align: "right" });
 
-  const paymentAnchorY = y + 12;
+  const buttonX = rightX - 132;
+  const buttonY = y + 14;
 
-  y += 36;
+  y += 42;
 
   if (docData.notes) {
-    pdf.setFontSize(11);
     pdf.setFont("helvetica", "bold");
-    pdf.text("NOTAS", margin, y);
-    y += 16;
+    pdf.setFontSize(11);
+    pdf.text("Notas", margin, y);
+    y += 18;
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(10);
-    const noteLines = pdf.splitTextToSize(String(docData.notes), pageW - margin * 2 - 180);
+    const noteLines = pdf.splitTextToSize(String(docData.notes), pageW - margin * 2 - 170);
     pdf.text(noteLines, margin, y);
     y += noteLines.length * 12 + 18;
   }
 
   if (docData.terms) {
-    pdf.setFontSize(11);
     pdf.setFont("helvetica", "bold");
-    pdf.text("CONDICIONES", margin, y);
-    y += 16;
+    pdf.setFontSize(11);
+    pdf.text("Condiciones", margin, y);
+    y += 18;
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(10);
-    const termLines = pdf.splitTextToSize(String(docData.terms), pageW - margin * 2 - 180);
+    const termLines = pdf.splitTextToSize(String(docData.terms), pageW - margin * 2 - 170);
     pdf.text(termLines, margin, y);
     y += termLines.length * 12 + 18;
   }
 
   if (biz.paymentLink) {
-    const btnLabel = biz.paymentLabel || "Pagar ahora";
-    const btnW = 132;
-    const btnH = 28;
-    const btnX = pageW - margin - btnW;
-    let btnY = paymentAnchorY;
-
-    if (btnY > pageH - 80) {
-      pdf.addPage();
-      btnY = 60;
-    }
-
-    drawPdfPaymentButton(pdf, btnX, btnY, btnW, btnH, btnLabel, biz.paymentLink);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    pdf.text("Pagar factura", buttonX, buttonY - 10);
+    drawPdfPaymentButton(pdf, buttonX, buttonY, 132, 28, biz.paymentLabel || "Pagar factura", biz.paymentLink);
   }
+
+  const footer = `${biz.name || "Tu Empresa"} · ${docData.type === "FAC" ? "FACTURA" : "COTIZACIÓN"} ${docData.number || ""}`.trim();
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(8);
+  pdf.setTextColor(120, 120, 120);
+  pdf.text(footer, pageW / 2, pageH - 24, { align: "center" });
+  pdf.setTextColor(0, 0, 0);
 
   return pdf;
 }
@@ -1471,11 +1432,8 @@ function extractPhoneFromContact(raw) {
   const candidate = parts.find((p) => /\d/.test(p)) || txt;
 
   let cleaned = candidate.replace(/[^\d+]/g, "");
-  if (cleaned.startsWith("+")) {
-    cleaned = `+${cleaned.slice(1).replace(/[^\d]/g, "")}`;
-  } else {
-    cleaned = cleaned.replace(/[^\d]/g, "");
-  }
+  if (cleaned.startsWith("+")) cleaned = `+${cleaned.slice(1).replace(/[^\d]/g, "")}`;
+  else cleaned = cleaned.replace(/[^\d]/g, "");
 
   return cleaned;
 }
@@ -1492,8 +1450,7 @@ async function sendInvoiceBySMS() {
 
     const pdfUrl = await uploadInvoicePdfAndGetUrl();
     const label = state.current.type === "FAC" ? "factura" : "cotización";
-    const msg =
-      `Hola ${state.current.client?.name || ""}, te compartimos tu ${label} ${state.current.number || ""} por ${fmtMoney(state.current.totals?.grand || 0)}. PDF: ${pdfUrl}`.trim();
+    const msg = `Hola ${state.current.client?.name || ""}, te compartimos tu ${label} ${state.current.number || ""} por ${fmtMoney(state.current.totals?.grand || 0)}. PDF: ${pdfUrl}`.trim();
 
     const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
     const smsUrl = isIOS
@@ -1600,7 +1557,6 @@ function bindEvents() {
   $("btnPDF")?.addEventListener("click", confirmPDF);
   $("btnSMS")?.addEventListener("click", sendInvoiceBySMS);
   $("btnConfirmFromPreview")?.addEventListener("click", confirmPDF);
-  $("btnRefreshPreview")?.addEventListener("click", () => {});
   $("btnDuplicate")?.addEventListener("click", duplicateDoc);
   $("btnDelete")?.addEventListener("click", deleteDocCloud);
 
