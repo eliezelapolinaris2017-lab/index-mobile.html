@@ -177,7 +177,7 @@ function defaultCfg() {
       phone: "",
       email: "",
       addr: "Puerto Rico",
-      paymentLabel: "Pagar factura",
+      paymentLabel: "",
       paymentLink: "",
       logoUrl: "",
       logoDataUrl: ""
